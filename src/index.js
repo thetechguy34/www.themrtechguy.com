@@ -842,23 +842,26 @@ app.get('/services', (c) => {
 <div class="section-label">TMTCo</div>
 <h2 class="section-title">Services</h2>
 <p class="section-sub">An overview of services offered by TMTCo.</p>
-</div>
-<div class="placeholder-box">
-<div class="big-icon">&#x1F6E0;&#xFE0F;</div>
-<h3>Coming Soon</h3>
-<p>This page is being set up. Reach out to <a href="mailto:logan.kelly@tmtcoau.com">logan.kelly@tmtcoau.com</a> in the meantime.</p>
-</div>
+
 <div class="placeholder-box">
 
 <a href="https://themrtechguy.com/spo" target="_blank" class="card">
 <div class="card-icon">&#127925;</div>
 <h3>Spotify</h3>
 <p>Access the TMTCo Spotify page.</p>
-<span class="card-link">Open OneDrive &rarr;</span>
+<span class="card-link">Open Spotify &rarr;</span>
+</a>
+
+</div>
+
+<a href="https://dle.themrtechguy.com" target="_blank" class="card">
+<div class="card-icon">&#x1F4C3;</div>
+<h3>Wordle games</h3>
+<p>Quick and easy access to the TMTCo provided wordle games.</p>
+<span class="card-link">Open Dle Games &rarr;</span>
 </a>
 <div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
 </div>
-
 
 </div>`;
   return shell('Services', body, 'services');
