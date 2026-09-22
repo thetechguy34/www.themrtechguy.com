@@ -226,7 +226,7 @@ border-radius:var(--radius);padding:3rem 2rem;text-align:center;max-width:560px;
 .divider{max-width:1100px;margin:0 auto;border:none;border-top:1px solid var(--border)}
 footer{max-width:1100px;margin:0 auto;padding:2rem 2rem 3rem;display:flex;
 align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem}
-footer p{color:var(--muted);font-size:.85rem}
+ p{color:var(--muted);font-size:.85rem}
 .footer-links{display:flex;gap:1.5rem;flex-wrap:wrap}
 .footer-links a{color:var(--muted);font-size:.85rem;transition:color var(--transition)}
 .footer-links a:hover{color:var(--text)}
@@ -324,6 +324,7 @@ ${body}
 <hr class="divider">
 <footer>
 <p>&copy; 2026 TMTCo &mdash; All rights reserved.</p>
+<p>&mdash; ABN: 37 546 247 840 </p>
 <div class="footer-links">
 <a href="/tos">Terms of Service</a>
 <a href="/contact">Contact</a>
@@ -331,7 +332,7 @@ ${body}
 </div>
 </footer>
 
-<!-- Microsoft Teams Chat Bot - appears on every page -->
+
 
 </body>
 </html>`;
