@@ -853,16 +853,26 @@ app.get('/services', (c) => {
 <span class="card-link">Open Spotify &rarr;</span>
 </a>
 
-</div>
-
 <a href="https://dle.themrtechguy.com" target="_blank" class="card">
 <div class="card-icon">&#x1F4C3;</div>
 <h3>Wordle games</h3>
 <p>Quick and easy access to the TMTCo provided wordle games.</p>
 <span class="card-link">Open Dle Games &rarr;</span>
 </a>
+</div>
+
+<a href="https://github.com/TMTCo" target="_blank" class="card">
+<div class="card-icon">&#xf09b;</div>
+<h3>Github</h3>
+<p>Quick access to TMTCo's Github.</p>
+<span class="card-link">Open Github &rarr;</span>
+</a>
 <div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
 </div>
+
+</div>
+
+
 
 </div>`;
   return shell('Services', body, 'services');
