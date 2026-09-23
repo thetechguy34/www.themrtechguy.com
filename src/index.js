@@ -554,6 +554,30 @@ function generateTempPassword() {
   return `${raw}Aa1!`;
 }
 
+// Shared Graph directory search used by both the no-JS page search and
+// the live type-ahead API below. Matches on the start of display name,
+// UPN, or mail. Note: this intentionally does NOT use $orderby - Graph
+// rejects $filter + $orderby together unless you opt into "advanced
+// query" mode (ConsistencyLevel: eventual + $count=true), which isn't
+// needed here since results are sorted client-side instead.
+async function searchDirectoryUsers(c, session, q) {
+  const safe = q.replace(/'/g, "''"); // basic OData single-quote escaping
+  const filter =
+    `startswith(displayName,'${safe}') or startswith(userPrincipalName,'${safe}') or startswith(mail,'${safe}')`;
+  const r = await graphFetch(
+    c,
+    session,
+    `/users?$filter=${encodeURIComponent(filter)}&$select=id,displayName,userPrincipalName,mail,accountEnabled&$top=15`
+  );
+  if (!r.ok || !r.body) {
+    return { ok: false, status: r.status, body: r.body };
+  }
+  const results = (r.body.value || []).sort((a, b) =>
+    (a.displayName || '').localeCompare(b.displayName || '')
+  );
+  return { ok: true, results };
+}
+
 // ============================================================
 // ROUTES - HOME
 // ============================================================
@@ -713,22 +737,11 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
   let searchFailed = false;
 
   if (search) {
-    const safe = search.replace(/'/g, "''"); // basic OData single-quote escaping
-    const filter =
-      `startswith(displayName,'${safe}') or startswith(userPrincipalName,'${safe}') or startswith(mail,'${safe}')`;
-    const r = await graphFetch(
-      c,
-      session,
-      `/users?$filter=${encodeURIComponent(filter)}&$select=id,displayName,userPrincipalName,mail,accountEnabled&$top=15`
-    );
-    if (r.ok && r.body) {
-      results = (r.body.value || []).sort((a, b) =>
-        (a.displayName || '').localeCompare(b.displayName || '')
-      );
+    const r = await searchDirectoryUsers(c, session, search);
+    if (r.ok) {
+      results = r.results;
     } else {
       searchFailed = true;
-      // Temporary debug logging - check Worker logs (wrangler tail) after a
-      // failed search to see Graph's actual status/error, then remove this.
       console.error('Graph user search failed:', r.status, JSON.stringify(r.body));
     }
   }
@@ -788,17 +801,144 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 ${flashMsg ? `<div class="flash-banner">${flashMsg}</div>` : ''}
 ${flashErr ? `<div class="flash-banner err">${flashErr}</div>` : ''}
 
-<form method="GET" action="/admin" class="admin-search">
-<input type="text" name="q" value="${escapeHtml(search)}" placeholder="Search by name or email&hellip;" autocomplete="off">
+<form method="GET" action="/admin" class="admin-search" id="adminSearchForm">
+<input type="text" name="q" id="adminSearchInput" value="${escapeHtml(search)}" placeholder="Start typing a name or email&hellip;" autocomplete="off">
 <button type="submit" class="btn btn-primary">Search</button>
 </form>
+<p class="no-results" id="searchStatus" style="display:none"></p>
 
+<div id="resultsContainer">
 ${searchFailed ? `<p class="no-results">Search failed &mdash; your session may need refreshing, or you may be missing the required Graph permission. Try signing out and back in.</p>` : ''}
 ${!searchFailed && search && results.length === 0 ? `<p class="no-results">No users found matching "${escapeHtml(search)}".</p>` : ''}
 ${rows}
+</div>
 
 <div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
-</div>`;
+</div>
+
+<script>
+(function(){
+  var input = document.getElementById('adminSearchInput');
+  var container = document.getElementById('resultsContainer');
+  var statusEl = document.getElementById('searchStatus');
+  var form = document.getElementById('adminSearchForm');
+  if (!input || !container) return;
+
+  // Type-ahead is progressive enhancement - the form above still works
+  // as a normal GET submit (full page reload) if JS is unavailable.
+  form.addEventListener('submit', function(e){ e.preventDefault(); });
+
+  var debounceTimer = null;
+  var activeController = null;
+
+  function buildActionForm(u, actionValue, label, btnClass, confirmMsg, currentQuery) {
+    var f = document.createElement('form');
+    f.method = 'POST';
+    f.action = '/admin/action';
+    if (confirmMsg) {
+      f.addEventListener('submit', function(e){
+        if (!confirm(confirmMsg)) e.preventDefault();
+      });
+    }
+    [['userId', u.id], ['q', currentQuery], ['action', actionValue]].forEach(function(pair){
+      var inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = pair[0];
+      inp.value = pair[1];
+      f.appendChild(inp);
+    });
+    var btn = document.createElement('button');
+    btn.type = 'submit';
+    btn.className = 'btn ' + btnClass;
+    btn.textContent = label;
+    f.appendChild(btn);
+    return f;
+  }
+
+  function renderResults(users, q) {
+    container.innerHTML = '';
+    if (!users.length) {
+      var p = document.createElement('p');
+      p.className = 'no-results';
+      p.textContent = 'No users found matching "' + q + '".';
+      container.appendChild(p);
+      return;
+    }
+    users.forEach(function(u){
+      var enabled = !!u.accountEnabled;
+      var upn = u.userPrincipalName || u.mail || '';
+      var displayLabel = u.displayName || upn;
+
+      var row = document.createElement('div');
+      row.className = 'user-row';
+
+      var left = document.createElement('div');
+      var nameDiv = document.createElement('div');
+      nameDiv.className = 'user-row-name';
+      nameDiv.appendChild(document.createTextNode((u.displayName || '(no name)') + ' '));
+      var pill = document.createElement('span');
+      pill.className = 'status-pill ' + (enabled ? 'enabled' : 'disabled');
+      pill.textContent = enabled ? '\\u25CF Enabled' : '\\u25CF Disabled';
+      nameDiv.appendChild(pill);
+      var emailDiv = document.createElement('div');
+      emailDiv.className = 'user-row-email';
+      emailDiv.textContent = upn;
+      left.appendChild(nameDiv);
+      left.appendChild(emailDiv);
+
+      var actions = document.createElement('div');
+      actions.className = 'user-row-actions';
+      actions.appendChild(buildActionForm(
+        u, enabled ? 'disable' : 'enable', enabled ? 'Disable account' : 'Enable account',
+        enabled ? 'btn-danger' : 'btn-ghost', null, q
+      ));
+      actions.appendChild(buildActionForm(
+        u, 'reset', 'Reset password', 'btn-ghost',
+        'Reset the password for ' + displayLabel + '? A new temporary password will be generated and shown once.', q
+      ));
+
+      row.appendChild(left);
+      row.appendChild(actions);
+      container.appendChild(row);
+    });
+  }
+
+  input.addEventListener('input', function(){
+    var q = input.value;
+    clearTimeout(debounceTimer);
+
+    if (q.trim().length < 2) {
+      statusEl.style.display = 'none';
+      container.innerHTML = '';
+      return;
+    }
+
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Searching\\u2026';
+
+    debounceTimer = setTimeout(function(){
+      if (activeController) activeController.abort();
+      activeController = new AbortController();
+
+      fetch('/admin/api/search?q=' + encodeURIComponent(q), { signal: activeController.signal })
+        .then(function(res){ return res.json(); })
+        .then(function(data){
+          statusEl.style.display = 'none';
+          if (data.error) {
+            container.innerHTML = '<p class="no-results">Search failed &mdash; try signing out and back in.</p>';
+            return;
+          }
+          renderResults(data.results || [], q);
+        })
+        .catch(function(err){
+          if (err.name === 'AbortError') return;
+          statusEl.style.display = 'none';
+          container.innerHTML = '<p class="no-results">Search failed &mdash; please try again.</p>';
+        });
+    }, 300);
+  });
+})();
+</script>`;
   return shell('Admin Panel', body, 'admin');
 });
 
@@ -806,6 +946,29 @@ ${rows}
 // Every write is made via Graph using the signed-in admin's own
 // delegated token, so Graph enforces their real Entra ID role on top
 // of the PortalAdmin app-role gate below.
+// Live type-ahead search used by the Admin Panel's JS as the person
+// types (see the inline <script> in the /admin page below). Same
+// auth + role checks as the page itself, just returns JSON instead
+// of HTML. Requires at least 2 characters to avoid firing a Graph
+// query on every single keystroke of a 1-character prefix.
+app.get('/admin/api/search', async (c) => {
+  const session = await getSession(c);
+  if (!session || !isPortalAdmin(session)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const q = (c.req.query('q') || '').trim();
+  if (q.length < 2) return c.json({ results: [] });
+
+  const r = await searchDirectoryUsers(c, session, q);
+  if (!r.ok) {
+    console.error('Graph live search failed:', r.status, JSON.stringify(r.body));
+    return c.json({ error: 'graph_error', status: r.status }, 502);
+  }
+
+  return c.json({ results: r.results });
+});
+
 app.post('/admin/action', async (c) => {
   const session = await getSession(c);
   if (!session || !isPortalAdmin(session)) {
