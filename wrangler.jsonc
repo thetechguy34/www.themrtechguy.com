@@ -15,16 +15,16 @@
     "TENANT_ID": "f1011f75-0d96-4d08-b8d4-6c79c851f9ba",
     "CLIENT_ID": "db8b6556-cec8-4b83-94b1-364cefd24203",
     "BASE_URL": "https://www.tmtcoau.com"
-  }
+  },
 
   // CLIENT_SECRET must remain a Secret set in the Cloudflare dashboard
   // (Workers & Pages -> your worker -> Settings -> Variables & Secrets)
   // Never put the client secret in this file.
-{
-  // ...
+
   "observability": {
-    "enabled": false
-  },
-  // ...
-}
+    "enabled": true,
+    "logs": {
+      "enabled": true
+    }
+  }
 }
