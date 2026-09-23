@@ -725,6 +725,9 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
       results = r.body.value || [];
     } else {
       searchFailed = true;
+      // Temporary debug logging - check Worker logs (wrangler tail) after a
+      // failed search to see Graph's actual status/error, then remove this.
+      console.error('Graph user search failed:', r.status, JSON.stringify(r.body));
     }
   }
 
@@ -1066,10 +1069,17 @@ app.get('/auth/callback', async (c) => {
     // separate signature check.
     let roles = [];
     try {
-      const payloadB64 = tokens.id_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      let payloadB64 = tokens.id_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      // base64url has no padding, but atob() requires the string length
+      // to be a multiple of 4 - pad it back out before decoding, or this
+      // throws and the catch below silently leaves roles as [].
+      while (payloadB64.length % 4 !== 0) payloadB64 += '=';
       const payload = JSON.parse(atob(payloadB64));
       roles = Array.isArray(payload.roles) ? payload.roles : [];
-    } catch {}
+      console.log('ID token roles claim:', JSON.stringify(roles), '| aud:', payload.aud, '| appid matches CLIENT_ID:', payload.aud === CLIENT_ID);
+    } catch (e) {
+      console.error('Failed to decode ID token for roles claim:', e);
+    }
 
     await createSession(c, {
       name: user.displayName || user.givenName || '',
