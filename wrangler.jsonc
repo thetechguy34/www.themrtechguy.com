@@ -20,4 +20,11 @@
   // CLIENT_SECRET must remain a Secret set in the Cloudflare dashboard
   // (Workers & Pages -> your worker -> Settings -> Variables & Secrets)
   // Never put the client secret in this file.
+{
+  // ...
+  "observability": {
+    "enabled": false
+  },
+  // ...
+}
 }
