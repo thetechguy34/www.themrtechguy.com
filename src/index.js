@@ -719,10 +719,12 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
     const r = await graphFetch(
       c,
       session,
-      `/users?$filter=${encodeURIComponent(filter)}&$select=id,displayName,userPrincipalName,mail,accountEnabled&$top=15&$orderby=displayName`
+      `/users?$filter=${encodeURIComponent(filter)}&$select=id,displayName,userPrincipalName,mail,accountEnabled&$top=15`
     );
     if (r.ok && r.body) {
-      results = r.body.value || [];
+      results = (r.body.value || []).sort((a, b) =>
+        (a.displayName || '').localeCompare(b.displayName || '')
+      );
     } else {
       searchFailed = true;
       // Temporary debug logging - check Worker logs (wrangler tail) after a
