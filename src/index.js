@@ -215,6 +215,30 @@ border:1px solid var(--border);border-radius:8px;font-size:.82rem;font-weight:50
 color:var(--muted);transition:all var(--transition)}
 .admin-link:hover{border-color:rgba(59,130,246,.4);color:var(--accent2);transform:translateY(-2px)}
 
+/* ADMIN PANEL (user management) */
+.admin-search{display:flex;gap:.6rem;margin-bottom:1.5rem;flex-wrap:wrap}
+.admin-search input{flex:1;min-width:220px;padding:.7rem 1rem;border-radius:10px;
+border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--body);font-size:.9rem}
+.admin-search input:focus{outline:none;border-color:var(--accent)}
+.user-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+padding:1.1rem 1.4rem;display:flex;align-items:center;justify-content:space-between;
+flex-wrap:wrap;gap:.9rem;margin-bottom:.8rem}
+.user-row-name{font-size:.92rem;color:var(--text);font-weight:500}
+.user-row-email{font-size:.8rem;color:var(--muted);margin-top:.15rem}
+.status-pill{display:inline-flex;align-items:center;gap:.35rem;font-size:.76rem;
+font-weight:500;padding:.2rem .6rem;border-radius:100px;margin-left:.6rem}
+.status-pill.enabled{background:rgba(74,222,128,.12);color:#4ade80}
+.status-pill.disabled{background:rgba(248,113,113,.12);color:#f87171}
+.user-row-actions{display:flex;gap:.5rem;flex-wrap:wrap}
+.user-row-actions .btn{padding:.45rem .9rem;font-size:.8rem}
+.btn-danger{background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.3)}
+.btn-danger:hover{background:rgba(239,68,68,.2);color:#fca5a5;transform:translateY(-2px)}
+.flash-banner{margin-bottom:1.5rem;padding:.9rem 1.1rem;background:rgba(59,130,246,.08);
+border-left:3px solid var(--accent);border-radius:0 8px 8px 0;font-size:.88rem;color:var(--text);
+word-break:break-word}
+.flash-banner.err{background:rgba(239,68,68,.08);border-left-color:#ef4444;color:#fca5a5}
+.no-results{color:var(--muted);font-size:.9rem;padding:1rem 0}
+
 /* ID CALLBACK / SERVICES PLACEHOLDER */
 .placeholder-box{background:var(--surface);border:1px solid var(--border);
 border-radius:var(--radius);padding:3rem 2rem;text-align:center;max-width:560px;margin:0 auto}
@@ -226,7 +250,7 @@ border-radius:var(--radius);padding:3rem 2rem;text-align:center;max-width:560px;
 .divider{max-width:1100px;margin:0 auto;border:none;border-top:1px solid var(--border)}
 footer{max-width:1100px;margin:0 auto;padding:2rem 2rem 3rem;display:flex;
 align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem}
- p{color:var(--muted);font-size:.85rem}
+footer p{color:var(--muted);font-size:.85rem}
 .footer-links{display:flex;gap:1.5rem;flex-wrap:wrap}
 .footer-links a{color:var(--muted);font-size:.85rem;transition:color var(--transition)}
 .footer-links a:hover{color:var(--text)}
@@ -278,7 +302,7 @@ function shell(title, body, activePage = '') {
 <ul class="nav-drawer-links">
 ${navItem('/', 'Home', 'home')}
 ${navItem('/tech', 'Tech Things', 'tech')}
-${navItem('/passreset', 'Cloud Password Reset', 'passreset')}
+${navItem('/admin', 'Admin Panel', 'admin')}
 ${navItem('/dashboard', 'Dashboard', 'dashboard')}
 ${navItem('/tos', 'Terms of Service', 'tos')}
 ${navItem('/contact', 'Contact', 'contact')}
@@ -324,7 +348,6 @@ ${body}
 <hr class="divider">
 <footer>
 <p>&copy; 2026 TMTCo &mdash; All rights reserved.</p>
-<p>&mdash; ABN: 37 546 247 840 </p>
 <div class="footer-links">
 <a href="/tos">Terms of Service</a>
 <a href="/contact">Contact</a>
@@ -332,7 +355,7 @@ ${body}
 </div>
 </footer>
 
-
+<!-- Microsoft Teams Chat Bot - appears on every page -->
 
 </body>
 </html>`;
@@ -354,6 +377,16 @@ const MS_LOGO = `<svg viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
 <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
 <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
 </svg>`;
+
+// Small helper to keep raw user/query text out of the HTML as literal markup
+function escapeHtml(str = '') {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // ============================================================
 // SESSION HELPERS
@@ -384,6 +417,18 @@ async function createSession(c, userData) {
     maxAge: SESSION_TTL,
   });
   return sid;
+}
+
+// Persist an updated session object (e.g. after a token refresh) under the
+// same session id / cookie, without resetting the user's idle timer twice.
+async function saveSession(c, session) {
+  const sid = getCookie(c, 'tmtco_sid');
+  if (!sid) return;
+  await c.env.SESSIONS.put(
+    `session:${sid}`,
+    JSON.stringify(session),
+    { expirationTtl: SESSION_TTL }
+  );
 }
 
 async function destroySession(c) {
@@ -420,9 +465,93 @@ function getBaseUrl(c) {
 
 // Pages the login flow is allowed to return to after auth.
 // Keeps /auth/login?next=... from being usable as an open redirect.
-const ALLOWED_NEXT_PATHS = ['/passreset', '/dashboard'];
+const ALLOWED_NEXT_PATHS = ['/admin', '/dashboard'];
 function sanitizeNext(path) {
-  return ALLOWED_NEXT_PATHS.includes(path) ? path : '/passreset';
+  return ALLOWED_NEXT_PATHS.includes(path) ? path : '/admin';
+}
+
+// The Graph scopes the app requests. offline_access gets us a refresh
+// token so an admin's session can renew its Graph access token without
+// forcing a re-login every ~60-90 minutes. User.ReadWrite.All and
+// Directory.Read.All are what let the Admin Panel search users and
+// change accountEnabled / passwordProfile - see the walkthrough notes
+// further down for the Entra ID side of this.
+const GRAPH_SCOPES =
+  'openid profile email offline_access User.Read User.ReadWrite.All Directory.Read.All';
+
+// ============================================================
+// GRAPH / TOKEN HELPERS
+// ============================================================
+
+// Returns a valid access token for this session, refreshing it via the
+// stored refresh_token if it has expired. Returns null if refresh fails
+// (caller should treat that as "session no longer valid for Graph calls").
+async function getValidAccessToken(c, session) {
+  if (session.access_token && session.expires_at && Date.now() < session.expires_at) {
+    return session.access_token;
+  }
+  if (!session.refresh_token) return null;
+
+  const { TENANT_ID, CLIENT_ID, CLIENT_SECRET } = c.env;
+  const res = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      refresh_token: session.refresh_token,
+      grant_type: 'refresh_token',
+      scope: GRAPH_SCOPES,
+    }),
+  });
+  if (!res.ok) return null;
+
+  const tokens = await res.json();
+  session.access_token = tokens.access_token;
+  session.refresh_token = tokens.refresh_token || session.refresh_token;
+  session.expires_at = Date.now() + (tokens.expires_in - 60) * 1000;
+  await saveSession(c, session);
+
+  return session.access_token;
+}
+
+// True if the signed-in user's ID token carried the "PortalAdmin" app
+// role. This role is assigned in Entra ID under Enterprise Applications
+// -> your app -> Users and groups (see walkthrough notes). Graph itself
+// will still separately enforce the signed-in admin's real directory
+// role (User Administrator etc.) on every write call below - this check
+// is just what decides whether the UI is shown at all.
+function isPortalAdmin(session) {
+  return Array.isArray(session.roles) && session.roles.includes('PortalAdmin');
+}
+
+// Thin wrapper around a Graph v1.0 call using this session's (possibly
+// just-refreshed) access token.
+async function graphFetch(c, session, path, options = {}) {
+  const token = await getValidAccessToken(c, session);
+  if (!token) return { ok: false, status: 401, body: null };
+
+  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+
+  let body = null;
+  if (res.status !== 204) {
+    try { body = await res.json(); } catch { body = null; }
+  }
+  return { ok: res.ok, status: res.status, body };
+}
+
+// Generates a temporary password that satisfies Entra ID's default
+// complexity policy (upper, lower, number, symbol, 12+ chars).
+function generateTempPassword() {
+  const raw = crypto.randomUUID().replace(/-/g, '').slice(0, 14);
+  return `${raw}Aa1!`;
 }
 
 // ============================================================
@@ -459,10 +588,10 @@ app.get('/', (c) => {
 <p>Access the company privacy statement.</p>
 <span class="card-link">Access &rarr;</span>
 </a>
-<a href="/passreset" class="card">
-<div class="card-icon">&#x2601;&#xFE0F;</div>
-<h3>Cloud Account Password Reset</h3>
-<p>Locked out? Use our cloud account password recovery portal to regain access. Authorised users only.</p>
+<a href="/admin" class="card">
+<div class="card-icon">&#x1F6E1;&#xFE0F;</div>
+<h3>Admin Panel</h3>
+<p>Manage Entra ID user accounts &mdash; enable, disable, or reset passwords. Authorised admins only.</p>
 <span class="card-link">Go to portal &rarr;</span>
 </a>
 </div>
@@ -520,60 +649,28 @@ app.get('/tech', (c) => {
 });
 
 // ============================================================
-// ROUTES - CLOUD PASSWORD RESET (auth protected)
+// ROUTES - ADMIN PANEL (auth + role protected)
+// Replaces the old "Cloud Password Reset" page. Lets a signed-in,
+// role-assigned admin search Entra ID users via Graph and enable,
+// disable, or reset the password on an account.
+//
+// /passreset is kept as a redirect so any old bookmarks/links still work.
 // ============================================================
-app.get('/passreset', async (c) => {
+app.get('/passreset', (c) => c.redirect('/admin', 301));
+
+app.get('/admin', async (c) => {
   const session = await getSession(c);
-
-  // Already authenticated - show portal
-  if (session) {
-    const body = `
-<div class="page-section top">
-<div class="user-bar">
-<div class="user-bar-info">
-<div class="user-avatar">&#x1F464;</div>
-<div>
-<div class="user-name">${session.name || session.email}</div>
-<div class="user-email">${session.email}</div>
-</div>
-</div>
-<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
-</div>
-
-<div class="section-header">
-<div class="section-label">Authorised Portal</div>
-<h2 class="section-title">Cloud Account Password Reset</h2>
-<p class="section-sub">Use the options below to reset or recover a cloud account password.</p>
-</div>
-<div class="cards">
-<a href="https://aka.ms/sspr" target="_blank" class="card">
-<div class="card-icon">&#x1F511;</div>
-<h3>Self-Service Password Reset</h3>
-<p>Reset your Microsoft 365 / Entra ID account password via the Microsoft SSPR portal.</p>
-<span class="card-link">Open Microsoft SSPR &rarr;</span>
-</a>
-<a href="mailto:logan.admin@directory.themrtechguy.com" class="card">
-<div class="card-icon">&#x1F6E1;&#xFE0F;</div>
-<h3>Contact IT Admin</h3>
-<p>If self-service isn't working, reach out to the TMTCo admin directly for a manual reset.</p>
-<span class="card-link">Email admin &rarr;</span>
-</a>
-<!-- Add more password reset tools here -->
-</div>
-<div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
-</div>`;
-    return shell('Cloud Password Reset', body, 'passreset');
-  }
-
-  // Not authenticated - show login wall
   const error = c.req.query('error');
-  const body = `
+
+  // Not signed in at all - show the Microsoft login wall
+  if (!session) {
+    const body = `
 <div class="login-page">
 <div class="login-box">
 <div class="lock-icon">&#x1F510;</div>
 <h2>Authorised Access Only</h2>
-<p>This portal is restricted to TMTCo staff and authorised users.<br>Sign in with your organisational account to continue.</p>
-<a href="/auth/login?next=/passreset" class="ms-login-btn">
+<p>This portal is restricted to TMTCo administrators.<br>Sign in with your organisational account to continue.</p>
+<a href="/auth/login?next=/admin" class="ms-login-btn">
 ${MS_LOGO}
 Sign in with Microsoft
 </a>
@@ -581,11 +678,185 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 <p class="login-note">&#x1F512; Secured via Microsoft Entra ID &middot; TMTCo internal use only</p>
 </div>
 </div>`;
-  return shell('Sign In', body, 'passreset');
+    return shell('Sign In', body, 'admin');
+  }
+
+  // Signed in, but doesn't hold the PortalAdmin app role in Entra ID
+  if (!isPortalAdmin(session)) {
+    const body = `
+<div class="page-section top">
+<div class="user-bar">
+<div class="user-bar-info">
+<div class="user-avatar">&#x1F464;</div>
+<div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
+</div>
+</div>
+<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
+</div>
+<div class="placeholder-box">
+<div class="big-icon">&#x26D4;</div>
+<h3>Not Authorised</h3>
+<p>Your account is signed in but doesn't hold the admin role required for this panel. Contact <a href="mailto:logan.admin@directory.themrtechguy.com">logan.admin@directory.themrtechguy.com</a> if you believe this is a mistake.</p>
+</div>
+</div>`;
+    return shell('Admin Panel', body, 'admin');
+  }
+
+  // Authorised - run a search if one was submitted
+  const search = c.req.query('q') || '';
+  const flashMsg = c.req.query('flash') || '';
+  const flashErr = c.req.query('flasherr') || '';
+
+  let results = [];
+  let searchFailed = false;
+
+  if (search) {
+    const safe = search.replace(/'/g, "''"); // basic OData single-quote escaping
+    const filter =
+      `startswith(displayName,'${safe}') or startswith(userPrincipalName,'${safe}') or startswith(mail,'${safe}')`;
+    const r = await graphFetch(
+      c,
+      session,
+      `/users?$filter=${encodeURIComponent(filter)}&$select=id,displayName,userPrincipalName,mail,accountEnabled&$top=15&$orderby=displayName`
+    );
+    if (r.ok && r.body) {
+      results = r.body.value || [];
+    } else {
+      searchFailed = true;
+    }
+  }
+
+  const rows = results.map((u) => {
+    const enabled = !!u.accountEnabled;
+    const upn = u.userPrincipalName || u.mail || '';
+    return `
+<div class="user-row">
+  <div>
+    <div class="user-row-name">${escapeHtml(u.displayName || '(no name)')}
+      <span class="status-pill ${enabled ? 'enabled' : 'disabled'}">
+        ${enabled ? '&#9679; Enabled' : '&#9679; Disabled'}
+      </span>
+    </div>
+    <div class="user-row-email">${escapeHtml(upn)}</div>
+  </div>
+  <div class="user-row-actions">
+    <form method="POST" action="/admin/action">
+      <input type="hidden" name="userId" value="${escapeHtml(u.id)}">
+      <input type="hidden" name="q" value="${escapeHtml(search)}">
+      <input type="hidden" name="action" value="${enabled ? 'disable' : 'enable'}">
+      <button type="submit" class="btn ${enabled ? 'btn-danger' : 'btn-ghost'}">
+        ${enabled ? 'Disable account' : 'Enable account'}
+      </button>
+    </form>
+    <form method="POST" action="/admin/action"
+      onsubmit="return confirm('Reset the password for ${escapeHtml((u.displayName || upn).replace(/'/g, "\\'"))}? A new temporary password will be generated and shown once.');">
+      <input type="hidden" name="userId" value="${escapeHtml(u.id)}">
+      <input type="hidden" name="q" value="${escapeHtml(search)}">
+      <input type="hidden" name="action" value="reset">
+      <button type="submit" class="btn btn-ghost">Reset password</button>
+    </form>
+  </div>
+</div>`;
+  }).join('');
+
+  const body = `
+<div class="page-section top">
+<div class="user-bar">
+<div class="user-bar-info">
+<div class="user-avatar">&#x1F464;</div>
+<div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
+</div>
+</div>
+<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
+</div>
+
+<div class="section-header">
+<div class="section-label">Authorised Portal &middot; Microsoft Graph</div>
+<h2 class="section-title">Admin Panel</h2>
+<p class="section-sub">Search for a user by name or email to enable, disable, or reset their Entra ID account. Actions are performed with your own admin permissions via Microsoft Graph.</p>
+</div>
+
+${flashMsg ? `<div class="flash-banner">${flashMsg}</div>` : ''}
+${flashErr ? `<div class="flash-banner err">${flashErr}</div>` : ''}
+
+<form method="GET" action="/admin" class="admin-search">
+<input type="text" name="q" value="${escapeHtml(search)}" placeholder="Search by name or email&hellip;" autocomplete="off">
+<button type="submit" class="btn btn-primary">Search</button>
+</form>
+
+${searchFailed ? `<p class="no-results">Search failed &mdash; your session may need refreshing, or you may be missing the required Graph permission. Try signing out and back in.</p>` : ''}
+${!searchFailed && search && results.length === 0 ? `<p class="no-results">No users found matching "${escapeHtml(search)}".</p>` : ''}
+${rows}
+
+<div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
+</div>`;
+  return shell('Admin Panel', body, 'admin');
+});
+
+// Handles the enable / disable / reset actions from the Admin Panel.
+// Every write is made via Graph using the signed-in admin's own
+// delegated token, so Graph enforces their real Entra ID role on top
+// of the PortalAdmin app-role gate below.
+app.post('/admin/action', async (c) => {
+  const session = await getSession(c);
+  if (!session || !isPortalAdmin(session)) {
+    return c.redirect('/admin?error=1');
+  }
+
+  const form = await c.req.parseBody();
+  const userId = form.userId;
+  const action = form.action;
+  const q = typeof form.q === 'string' ? form.q : '';
+
+  if (!userId || !['enable', 'disable', 'reset'].includes(action)) {
+    return c.redirect(`/admin?q=${encodeURIComponent(q)}&flasherr=${encodeURIComponent('Invalid request.')}`);
+  }
+
+  let flash = '';
+  let flasherr = '';
+
+  if (action === 'enable' || action === 'disable') {
+    const r = await graphFetch(c, session, `/users/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ accountEnabled: action === 'enable' }),
+    });
+    if (r.ok) {
+      flash = `Account ${action === 'enable' ? 'enabled' : 'disabled'} successfully.`;
+    } else {
+      flasherr = `Failed to ${action} account (Graph returned status ${r.status}). This usually means your Entra ID role doesn't permit this change for that user.`;
+    }
+  }
+
+  if (action === 'reset') {
+    const tempPassword = generateTempPassword();
+    const r = await graphFetch(c, session, `/users/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        passwordProfile: {
+          forceChangePasswordNextSignIn: true,
+          password: tempPassword,
+        },
+      }),
+    });
+    if (r.ok) {
+      flash = `Password reset. Temporary password (share securely &mdash; shown once only): <strong>${escapeHtml(tempPassword)}</strong>`;
+    } else {
+      flasherr = `Failed to reset password (Graph returned status ${r.status}). This usually means your Entra ID role doesn't permit resetting this user's password (e.g. they hold an admin role themselves).`;
+    }
+  }
+
+  const params = new URLSearchParams({ q });
+  if (flash) params.set('flash', flash);
+  if (flasherr) params.set('flasherr', flasherr);
+  return c.redirect(`/admin?${params.toString()}`);
 });
 
 // ============================================================
-// ROUTES - DASHBOARD (auth protected - same login flow as /passreset)
+// ROUTES - DASHBOARD (auth protected - same login flow as /admin)
 // Quick access to Microsoft 365 apps, plus an Admin Centre section at
 // the bottom linking to the Microsoft admin portals. Access to each
 // admin portal is still gated by the signed-in user's actual admin
@@ -602,8 +873,8 @@ app.get('/dashboard', async (c) => {
 <div class="user-bar-info">
 <div class="user-avatar">&#x1F464;</div>
 <div>
-<div class="user-name">${session.name || session.email}</div>
-<div class="user-email">${session.email}</div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
 </div>
 </div>
 <a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
@@ -692,7 +963,7 @@ app.get('/dashboard', async (c) => {
     return shell('Dashboard', body, 'dashboard');
   }
 
-  // Not authenticated - show login wall (same flow as /passreset)
+  // Not authenticated - show login wall (same flow as /admin)
   const error = c.req.query('error');
   const body = `
 <div class="login-page">
@@ -714,7 +985,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 // ============================================================
 // ROUTES - AUTH (OAuth2 server-side flow)
 // Supports multiple domains via ALLOWED_HOSTS / getBaseUrl() above.
-// Supports returning to whichever page started the login (passreset
+// Supports returning to whichever page started the login (admin
 // or dashboard) via a ?next= param stored in a short-lived cookie.
 // ============================================================
 
@@ -724,14 +995,14 @@ app.get('/auth/login', (c) => {
   const baseUrl = getBaseUrl(c);
   const redirectUri = `${baseUrl}/auth/callback`;
   const state = crypto.randomUUID();
-  const next = sanitizeNext(c.req.query('next') || '/passreset');
+  const next = sanitizeNext(c.req.query('next') || '/admin');
 
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
     response_type: 'code',
     redirect_uri: redirectUri,
     response_mode: 'query',
-    scope: 'openid profile email User.Read',
+    scope: GRAPH_SCOPES,
     state,
   });
 
@@ -753,7 +1024,7 @@ app.get('/auth/callback', async (c) => {
   const baseUrl = getBaseUrl(c);
   const { code, state, error } = c.req.query();
   const savedState = getCookie(c, 'oauth_state');
-  const next = sanitizeNext(getCookie(c, 'oauth_next') || '/passreset');
+  const next = sanitizeNext(getCookie(c, 'oauth_next') || '/admin');
   deleteCookie(c, 'oauth_state', { path: '/' });
   deleteCookie(c, 'oauth_next', { path: '/' });
 
@@ -787,9 +1058,26 @@ app.get('/auth/callback', async (c) => {
     if (!graphRes.ok) return c.redirect(`${next}?error=1`);
     const user = await graphRes.json();
 
+    // Pull the "roles" claim out of the ID token so we know whether this
+    // user holds the PortalAdmin app role (assigned in Entra ID under
+    // Enterprise Applications -> your app -> Users and groups). This ID
+    // token came from the server-to-server call above, not the browser
+    // redirect, so it's trustworthy for this purpose without needing a
+    // separate signature check.
+    let roles = [];
+    try {
+      const payloadB64 = tokens.id_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(atob(payloadB64));
+      roles = Array.isArray(payload.roles) ? payload.roles : [];
+    } catch {}
+
     await createSession(c, {
       name: user.displayName || user.givenName || '',
       email: user.mail || user.userPrincipalName || '',
+      roles,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token || null,
+      expires_at: Date.now() + ((tokens.expires_in || 3600) - 60) * 1000,
     });
 
     return c.redirect(next);
@@ -843,35 +1131,22 @@ app.get('/services', (c) => {
 <div class="section-label">TMTCo</div>
 <h2 class="section-title">Services</h2>
 <p class="section-sub">An overview of services offered by TMTCo.</p>
-
+</div>
+<div class="placeholder-box">
+<div class="big-icon">&#x1F6E0;&#xFE0F;</div>
+<h3>Coming Soon</h3>
+<p>This page is being set up. Reach out to <a href="mailto:logan.kelly@tmtcoau.com">logan.kelly@tmtcoau.com</a> in the meantime.</p>
+</div>
 <div class="placeholder-box">
 
 <a href="https://themrtechguy.com/spo" target="_blank" class="card">
 <div class="card-icon">&#127925;</div>
 <h3>Spotify</h3>
 <p>Access the TMTCo Spotify page.</p>
-<span class="card-link">Open Spotify &rarr;</span>
-</a>
-
-<a href="https://dle.themrtechguy.com" target="_blank" class="card">
-<div class="card-icon">&#x1F4C3;</div>
-<h3>Wordle games</h3>
-<p>Quick and easy access to the TMTCo provided wordle games.</p>
-<span class="card-link">Open Dle Games &rarr;</span>
-</a>
-</div>
-
-<a href="https://github.com/TMTCo" target="_blank" class="card">
-<div class="card-icon">&#xf09b;</div>
-<h3>Github</h3>
-<p>Quick access to TMTCo's Github.</p>
-<span class="card-link">Open Github &rarr;</span>
+<span class="card-link">Open OneDrive &rarr;</span>
 </a>
 <div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
 </div>
-
-</div>
-
 
 
 </div>`;
