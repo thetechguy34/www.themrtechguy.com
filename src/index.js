@@ -995,6 +995,7 @@ app.post('/admin/action', async (c) => {
     if (r.ok) {
       flash = `Account ${action === 'enable' ? 'enabled' : 'disabled'} successfully.`;
     } else {
+      console.error('Graph enable/disable failed:', r.status, JSON.stringify(r.body));
       flasherr = `Failed to ${action} account (Graph returned status ${r.status}). This usually means your Entra ID role doesn't permit this change for that user.`;
     }
   }
@@ -1013,7 +1014,8 @@ app.post('/admin/action', async (c) => {
     if (r.ok) {
       flash = `Password reset. Temporary password (share securely &mdash; shown once only): <strong>${escapeHtml(tempPassword)}</strong>`;
     } else {
-      flasherr = `Failed to reset password (Graph returned status ${r.status}). This usually means your Entra ID role doesn't permit resetting this user's password (e.g. they hold an admin role themselves).`;
+      console.error('Graph password reset failed:', r.status, JSON.stringify(r.body));
+      flasherr = `Failed to reset password (Graph returned status ${r.status}: ${escapeHtml(r.body && r.body.error ? r.body.error.code : 'unknown')}). Check the Worker logs for the full Graph error.`;
     }
   }
 
