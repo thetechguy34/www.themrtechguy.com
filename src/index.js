@@ -1384,7 +1384,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
   const r = await graphFetch(
     c,
     session,
-    `/deviceManagement/managedDevices?$select=id,deviceName,operatingSystem,osVersion,complianceState,lastSyncDateTime,approximateLastSignInDateTime,userDisplayName,userPrincipalName,manufacturer,model&$top=200`
+    `/deviceManagement/managedDevices?$select=id,deviceName,operatingSystem,osVersion,complianceState,lastSyncDateTime,userDisplayName,userPrincipalName,manufacturer,model&$top=200`
   );
 
   let devices = [];
@@ -1408,7 +1408,6 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
   <td>${escapeHtml([d.operatingSystem, d.osVersion].filter(Boolean).join(' '))}</td>
   <td><span class="compliance-pill ${complianceClass(d.complianceState)}">${escapeHtml(d.complianceState || 'unknown')}</span></td>
   <td>${fmtDate(d.lastSyncDateTime)}</td>
-  <td>${fmtDate(d.approximateLastSignInDateTime)}</td>
   <td>${escapeHtml(d.userDisplayName || d.userPrincipalName || '&mdash;')}</td>
   <td>${escapeHtml([d.manufacturer, d.model].filter(Boolean).join(' ') || '&mdash;')}</td>
 </tr>`).join('');
@@ -1429,7 +1428,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 <div class="section-header">
 <div class="section-label">Authorised Portal &middot; Microsoft Graph &middot; Intune</div>
 <h2 class="section-title">Devices</h2>
-<p class="section-sub">Intune-managed devices in the directory, with compliance state and last check-in / sign-in.</p>
+<p class="section-sub">Intune-managed devices in the directory, with compliance state and last check-in.</p>
 </div>
 
 <div class="admin-tabs">
@@ -1445,7 +1444,7 @@ ${devices.length > 0 ? `
 <div class="device-table-wrap">
 <table class="device-table">
 <thead><tr>
-<th>Device</th><th>OS</th><th>Compliance</th><th>Last check-in</th><th>Approx. last sign-in</th><th>Primary user</th><th>Model</th>
+<th>Device</th><th>OS</th><th>Compliance</th><th>Last check-in</th><th>Primary user</th><th>Model</th>
 </tr></thead>
 <tbody>${deviceRows}</tbody>
 </table>
