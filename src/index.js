@@ -231,6 +231,12 @@ font-weight:500;padding:.2rem .6rem;border-radius:100px;margin-left:.6rem}
 .status-pill.disabled{background:rgba(248,113,113,.12);color:#f87171}
 .user-row-actions{display:flex;gap:.5rem;flex-wrap:wrap}
 .user-row-actions .btn{padding:.45rem .9rem;font-size:.8rem}
+.reset-form{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+.reset-form input[type="text"]{width:170px;padding:.45rem .7rem;border-radius:8px;
+border:1px solid var(--border);background:var(--surface2);color:var(--text);
+font-family:var(--body);font-size:.8rem}
+.reset-form input[type="text"]:focus{outline:none;border-color:var(--accent)}
+.reset-form input[type="text"]::placeholder{color:var(--muted)}
 .btn-danger{background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.3)}
 .btn-danger:hover{background:rgba(239,68,68,.2);color:#fca5a5;transform:translateY(-2px)}
 .flash-banner{margin-bottom:1.5rem;padding:.9rem 1.1rem;background:rgba(59,130,246,.08);
@@ -473,11 +479,17 @@ function sanitizeNext(path) {
 // The Graph scopes the app requests. offline_access gets us a refresh
 // token so an admin's session can renew its Graph access token without
 // forcing a re-login every ~60-90 minutes. User.ReadWrite.All and
-// Directory.Read.All are what let the Admin Panel search users and
-// change accountEnabled / passwordProfile - see the walkthrough notes
-// further down for the Entra ID side of this.
+// Directory.Read.All cover search and accountEnabled enable/disable.
+//
+// User-PasswordProfile.ReadWrite.All is required SEPARATELY for password
+// resets - as of 2026 Microsoft has been splitting sensitive user fields
+// (password, phone, otherMails) into their own resource-specific
+// permissions, and User.ReadWrite.All alone no longer covers writing
+// passwordProfile even for a Global Administrator. Without this scope,
+// enable/disable will work fine but password reset will fail with a
+// generic Authorization_RequestDenied 403.
 const GRAPH_SCOPES =
-  'openid profile email offline_access User.Read User.ReadWrite.All Directory.Read.All';
+  'openid profile email offline_access User.Read User.ReadWrite.All Directory.Read.All User-PasswordProfile.ReadWrite.All';
 
 // ============================================================
 // GRAPH / TOKEN HELPERS
@@ -768,11 +780,13 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
         ${enabled ? 'Disable account' : 'Enable account'}
       </button>
     </form>
-    <form method="POST" action="/admin/action"
-      onsubmit="return confirm('Reset the password for ${escapeHtml((u.displayName || upn).replace(/'/g, "\\'"))}? A new temporary password will be generated and shown once.');">
+    <form method="POST" action="/admin/action" class="reset-form"
+      onsubmit="return confirm('Reset the password for ${escapeHtml((u.displayName || upn).replace(/'/g, "\\'"))}? This will immediately replace their current password.');">
       <input type="hidden" name="userId" value="${escapeHtml(u.id)}">
       <input type="hidden" name="q" value="${escapeHtml(search)}">
       <input type="hidden" name="action" value="reset">
+      <input type="text" name="password" class="pw-field" placeholder="Leave blank to auto-generate" autocomplete="off" spellcheck="false">
+      <button type="button" class="btn btn-ghost gen-btn">Generate</button>
       <button type="submit" class="btn btn-ghost">Reset password</button>
     </form>
   </div>
@@ -830,6 +844,62 @@ ${rows}
 
   var debounceTimer = null;
   var activeController = null;
+
+  function generateClientPassword() {
+    var raw = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random())).replace(/-/g, '').slice(0, 14);
+    return raw + 'Aa1!';
+  }
+
+  function buildResetForm(u, currentQuery) {
+    var displayLabel = u.displayName || u.userPrincipalName || u.mail || '';
+    var f = document.createElement('form');
+    f.method = 'POST';
+    f.action = '/admin/action';
+    f.className = 'reset-form';
+    f.addEventListener('submit', function(e){
+      if (!confirm('Reset the password for ' + displayLabel + '? This will immediately replace their current password.')) {
+        e.preventDefault();
+      }
+    });
+    [['userId', u.id], ['q', currentQuery], ['action', 'reset']].forEach(function(pair){
+      var inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = pair[0];
+      inp.value = pair[1];
+      f.appendChild(inp);
+    });
+    var pwInput = document.createElement('input');
+    pwInput.type = 'text';
+    pwInput.name = 'password';
+    pwInput.className = 'pw-field';
+    pwInput.placeholder = 'Leave blank to auto-generate';
+    pwInput.autocomplete = 'off';
+    pwInput.spellcheck = false;
+    f.appendChild(pwInput);
+
+    var genBtn = document.createElement('button');
+    genBtn.type = 'button';
+    genBtn.className = 'btn btn-ghost gen-btn';
+    genBtn.textContent = 'Generate';
+    f.appendChild(genBtn);
+
+    var submitBtn = document.createElement('button');
+    submitBtn.type = 'submit';
+    submitBtn.className = 'btn btn-ghost';
+    submitBtn.textContent = 'Reset password';
+    f.appendChild(submitBtn);
+
+    return f;
+  }
+
+  // Event delegation for "Generate" buttons - covers both the initial
+  // server-rendered rows and any rows the live search swaps in later.
+  container.addEventListener('click', function(e){
+    var btn = e.target.closest('.gen-btn');
+    if (!btn) return;
+    var pwField = btn.closest('form').querySelector('.pw-field, input[name="password"]');
+    if (pwField) pwField.value = generateClientPassword();
+  });
 
   function buildActionForm(u, actionValue, label, btnClass, confirmMsg, currentQuery) {
     var f = document.createElement('form');
@@ -892,10 +962,7 @@ ${rows}
         u, enabled ? 'disable' : 'enable', enabled ? 'Disable account' : 'Enable account',
         enabled ? 'btn-danger' : 'btn-ghost', null, q
       ));
-      actions.appendChild(buildActionForm(
-        u, 'reset', 'Reset password', 'btn-ghost',
-        'Reset the password for ' + displayLabel + '? A new temporary password will be generated and shown once.', q
-      ));
+      actions.appendChild(buildResetForm(u, q));
 
       row.appendChild(left);
       row.appendChild(actions);
@@ -1001,21 +1068,37 @@ app.post('/admin/action', async (c) => {
   }
 
   if (action === 'reset') {
-    const tempPassword = generateTempPassword();
+    const customPassword = typeof form.password === 'string' ? form.password.trim() : '';
+
+    // Entra ID's default password policy requires 8-256 chars with at
+    // least 3 of: uppercase, lowercase, digit, symbol. We only do a
+    // basic length check here - Graph itself will reject anything that
+    // doesn't meet the tenant's actual policy, and that error is
+    // surfaced below rather than duplicating Microsoft's full ruleset.
+    if (customPassword && customPassword.length < 8) {
+      return c.redirect(
+        `/admin?q=${encodeURIComponent(q)}&flasherr=${encodeURIComponent('Password must be at least 8 characters.')}`
+      );
+    }
+
+    const passwordToSet = customPassword || generateTempPassword();
     const r = await graphFetch(c, session, `/users/${encodeURIComponent(userId)}`, {
       method: 'PATCH',
       body: JSON.stringify({
         passwordProfile: {
           forceChangePasswordNextSignIn: true,
-          password: tempPassword,
+          password: passwordToSet,
         },
       }),
     });
     if (r.ok) {
-      flash = `Password reset. Temporary password (share securely &mdash; shown once only): <strong>${escapeHtml(tempPassword)}</strong>`;
+      flash = customPassword
+        ? `Password set successfully.`
+        : `Password reset. Temporary password (share securely &mdash; shown once only): <strong>${escapeHtml(passwordToSet)}</strong>`;
     } else {
       console.error('Graph password reset failed:', r.status, JSON.stringify(r.body));
-      flasherr = `Failed to reset password (Graph returned status ${r.status}: ${escapeHtml(r.body && r.body.error ? r.body.error.code : 'unknown')}). Check the Worker logs for the full Graph error.`;
+      const graphMsg = r.body && r.body.error ? r.body.error.message : null;
+      flasherr = `Failed to reset password (Graph returned status ${r.status}: ${escapeHtml(r.body && r.body.error ? r.body.error.code : 'unknown')})${graphMsg ? ' &mdash; ' + escapeHtml(graphMsg) : ''}.`;
     }
   }
 
@@ -1220,6 +1303,11 @@ app.get('/auth/callback', async (c) => {
 
     if (!tokenRes.ok) return c.redirect(`${next}?error=1`);
     const tokens = await tokenRes.json();
+    // Temporary debug logging - shows exactly which scopes Microsoft
+    // actually granted for this token. Compare against GRAPH_SCOPES above;
+    // if User.ReadWrite.All is missing here, that's the write-permission
+    // gap causing 403s on enable/disable/reset even though search works.
+    console.log('Graph token scopes granted:', tokens.scope);
 
     const graphRes = await fetch('https://graph.microsoft.com/v1.0/me', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
