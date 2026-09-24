@@ -245,6 +245,61 @@ word-break:break-word}
 .flash-banner.err{background:rgba(239,68,68,.08);border-left-color:#ef4444;color:#fca5a5}
 .no-results{color:var(--muted);font-size:.9rem;padding:1rem 0}
 
+/* ADMIN TABS (Users / Devices / Groups) */
+.admin-tabs{display:flex;gap:.4rem;margin-bottom:2rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.admin-tab{padding:.7rem 1.1rem;font-size:.88rem;font-weight:500;color:var(--muted);
+border-bottom:2px solid transparent;margin-bottom:-1px;transition:all var(--transition)}
+.admin-tab:hover{color:var(--text)}
+.admin-tab.active{color:var(--accent2);border-bottom-color:var(--accent)}
+
+/* BULK TOOLBAR */
+.bulk-toolbar{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;
+background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+padding:.9rem 1.2rem;margin-bottom:1.2rem}
+.bulk-toolbar.hidden{display:none}
+.bulk-count{font-size:.85rem;color:var(--text);font-weight:500;margin-right:auto}
+.bulk-toolbar .btn{padding:.45rem .9rem;font-size:.8rem}
+.user-row-check{display:flex;align-items:center;gap:.9rem}
+.user-row-check input[type="checkbox"]{width:17px;height:17px;accent-color:var(--accent);cursor:pointer;flex-shrink:0}
+.select-all-row{display:flex;align-items:center;gap:.6rem;padding:.4rem 0 1rem;color:var(--muted);font-size:.85rem}
+.select-all-row input[type="checkbox"]{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+
+/* DEVICES TABLE */
+.device-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)}
+.device-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.device-table th{text-align:left;padding:.8rem 1rem;background:var(--surface2);
+color:var(--muted);font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;
+border-bottom:1px solid var(--border);white-space:nowrap}
+.device-table td{padding:.8rem 1rem;border-bottom:1px solid var(--border);color:var(--text);white-space:nowrap}
+.device-table tr:last-child td{border-bottom:none}
+.device-table tr:hover td{background:rgba(59,130,246,.04)}
+.compliance-pill{display:inline-flex;align-items:center;gap:.3rem;font-size:.74rem;
+font-weight:500;padding:.15rem .55rem;border-radius:100px}
+.compliance-pill.compliant{background:rgba(74,222,128,.12);color:#4ade80}
+.compliance-pill.noncompliant{background:rgba(248,113,113,.12);color:#f87171}
+.compliance-pill.other{background:rgba(148,163,184,.12);color:#94a3b8}
+
+/* GROUPS LIST */
+.group-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+padding:1.1rem 1.4rem;display:flex;align-items:center;justify-content:space-between;
+flex-wrap:wrap;gap:.9rem;margin-bottom:.8rem}
+.group-row-name{font-size:.92rem;color:var(--text);font-weight:500}
+.group-row-meta{font-size:.8rem;color:var(--muted);margin-top:.15rem}
+.group-type-pill{display:inline-block;font-size:.72rem;font-weight:500;padding:.15rem .5rem;
+border-radius:100px;background:rgba(96,165,250,.12);color:var(--accent2);margin-left:.5rem}
+
+/* EMAIL COMPOSE */
+.compose-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+padding:1.6rem;max-width:640px}
+.compose-box label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:.4rem;margin-top:1rem}
+.compose-box label:first-child{margin-top:0}
+.compose-box input[type="text"],.compose-box textarea{width:100%;padding:.7rem 1rem;
+border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);
+font-family:var(--body);font-size:.9rem}
+.compose-box textarea{min-height:160px;resize:vertical;font-family:var(--body)}
+.compose-box input:focus,.compose-box textarea:focus{outline:none;border-color:var(--accent)}
+.compose-actions{margin-top:1.4rem;display:flex;gap:.75rem}
+
 /* ID CALLBACK / SERVICES PLACEHOLDER */
 .placeholder-box{background:var(--surface);border:1px solid var(--border);
 border-radius:var(--radius);padding:3rem 2rem;text-align:center;max-width:560px;margin:0 auto}
@@ -488,8 +543,13 @@ function sanitizeNext(path) {
 // passwordProfile even for a Global Administrator. Without this scope,
 // enable/disable will work fine but password reset will fail with a
 // generic Authorization_RequestDenied 403.
+//
+// DeviceManagementManagedDevices.Read.All - list Intune managed devices.
+// Group.Read.All - list directory groups.
+// Mail.Send - send an email (as the signed-in admin) to a group's mail address.
 const GRAPH_SCOPES =
-  'openid profile email offline_access User.Read User.ReadWrite.All Directory.Read.All User-PasswordProfile.ReadWrite.All';
+  'openid profile email offline_access User.Read User.ReadWrite.All Directory.Read.All ' +
+  'User-PasswordProfile.ReadWrite.All DeviceManagementManagedDevices.Read.All Group.Read.All Mail.Send';
 
 // ============================================================
 // GRAPH / TOKEN HELPERS
@@ -763,13 +823,16 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
     const upn = u.userPrincipalName || u.mail || '';
     return `
 <div class="user-row">
-  <div>
+  <div class="user-row-check">
+    <input type="checkbox" class="bulk-check" value="${escapeHtml(u.id)}" data-name="${escapeHtml(u.displayName || upn)}">
+    <div>
     <div class="user-row-name">${escapeHtml(u.displayName || '(no name)')}
       <span class="status-pill ${enabled ? 'enabled' : 'disabled'}">
         ${enabled ? '&#9679; Enabled' : '&#9679; Disabled'}
       </span>
     </div>
     <div class="user-row-email">${escapeHtml(upn)}</div>
+    </div>
   </div>
   <div class="user-row-actions">
     <form method="POST" action="/admin/action">
@@ -812,6 +875,12 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 <p class="section-sub">Search for a user by name or email to enable, disable, or reset their Entra ID account. Actions are performed with your own admin permissions via Microsoft Graph.</p>
 </div>
 
+<div class="admin-tabs">
+<a href="/admin" class="admin-tab active">Users</a>
+<a href="/admin/devices" class="admin-tab">Devices</a>
+<a href="/admin/groups" class="admin-tab">Groups</a>
+</div>
+
 ${flashMsg ? `<div class="flash-banner">${flashMsg}</div>` : ''}
 ${flashErr ? `<div class="flash-banner err">${flashErr}</div>` : ''}
 
@@ -821,6 +890,16 @@ ${flashErr ? `<div class="flash-banner err">${flashErr}</div>` : ''}
 </form>
 <p class="no-results" id="searchStatus" style="display:none"></p>
 
+<div class="bulk-toolbar hidden" id="bulkToolbar">
+<span class="bulk-count" id="bulkCount">0 selected</span>
+<button type="button" class="btn btn-ghost" id="bulkEnableBtn">Enable selected</button>
+<button type="button" class="btn btn-danger" id="bulkDisableBtn">Disable selected</button>
+<button type="button" class="btn btn-ghost" id="bulkResetBtn">Reset passwords (auto-generate)</button>
+</div>
+<p class="no-results" id="bulkStatus" style="display:none"></p>
+
+${results.length > 0 ? `<div class="select-all-row"><input type="checkbox" id="selectAllCheckbox"> <label for="selectAllCheckbox">Select all shown</label></div>` : ''}
+
 <div id="resultsContainer">
 ${searchFailed ? `<p class="no-results">Search failed &mdash; your session may need refreshing, or you may be missing the required Graph permission. Try signing out and back in.</p>` : ''}
 ${!searchFailed && search && results.length === 0 ? `<p class="no-results">No users found matching "${escapeHtml(search)}".</p>` : ''}
@@ -829,6 +908,85 @@ ${rows}
 
 <div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
 </div>
+
+<script>
+(function(){
+  var bulkToolbar = document.getElementById('bulkToolbar');
+  var bulkCount = document.getElementById('bulkCount');
+  var bulkStatus = document.getElementById('bulkStatus');
+  var selectAll = document.getElementById('selectAllCheckbox');
+  var container = document.getElementById('resultsContainer');
+  if (!container) return;
+
+  function checkedBoxes() {
+    return Array.prototype.slice.call(container.querySelectorAll('.bulk-check:checked'));
+  }
+
+  function refreshToolbar() {
+    var n = checkedBoxes().length;
+    bulkCount.textContent = n + ' selected';
+    bulkToolbar.classList.toggle('hidden', n === 0);
+  }
+
+  container.addEventListener('change', function(e){
+    if (e.target.classList.contains('bulk-check')) refreshToolbar();
+  });
+
+  if (selectAll) {
+    selectAll.addEventListener('change', function(){
+      container.querySelectorAll('.bulk-check').forEach(function(cb){ cb.checked = selectAll.checked; });
+      refreshToolbar();
+    });
+  }
+
+  function runBulk(action) {
+    var ids = checkedBoxes().map(function(cb){ return cb.value; });
+    var names = checkedBoxes().map(function(cb){ return cb.getAttribute('data-name') || cb.value; });
+    if (!ids.length) return;
+
+    var confirmMsg = action === 'reset'
+      ? 'Reset passwords for ' + ids.length + ' selected user(s)? Each will get a new auto-generated password.'
+      : (action === 'disable' ? 'Disable ' : 'Enable ') + ids.length + ' selected user(s)?';
+    if (!confirm(confirmMsg)) return;
+
+    bulkStatus.style.display = 'block';
+    bulkStatus.textContent = 'Working\\u2026';
+
+    fetch('/admin/bulk-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userIds: ids, action: action })
+    })
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        bulkStatus.style.display = 'none';
+        if (data.error) {
+          alert('Bulk action failed: ' + data.error);
+          return;
+        }
+        var lines = data.results.map(function(r, i){
+          var label = names[ids.indexOf(r.userId)] || r.userId;
+          if (!r.ok) return label + ': failed (' + (r.error || 'unknown error') + ')';
+          if (action === 'reset') return label + ': ' + r.password;
+          return label + ': ' + action + 'd successfully';
+        });
+        alert((action === 'reset' ? 'Passwords set (save these now, shown once):\\n\\n' : 'Done:\\n\\n') + lines.join('\\n'));
+        location.reload();
+      })
+      .catch(function(){
+        bulkStatus.style.display = 'none';
+        alert('Bulk action failed \\u2014 please try again.');
+      });
+  }
+
+  var enableBtn = document.getElementById('bulkEnableBtn');
+  var disableBtn = document.getElementById('bulkDisableBtn');
+  var resetBtn = document.getElementById('bulkResetBtn');
+  if (enableBtn) enableBtn.addEventListener('click', function(){ runBulk('enable'); });
+  if (disableBtn) disableBtn.addEventListener('click', function(){ runBulk('disable'); });
+  if (resetBtn) resetBtn.addEventListener('click', function(){ runBulk('reset'); });
+})();
+</script>
 
 <script>
 (function(){
@@ -942,6 +1100,15 @@ ${rows}
       var row = document.createElement('div');
       row.className = 'user-row';
 
+      var checkWrap = document.createElement('div');
+      checkWrap.className = 'user-row-check';
+      var checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'bulk-check';
+      checkbox.value = u.id;
+      checkbox.setAttribute('data-name', displayLabel);
+      checkWrap.appendChild(checkbox);
+
       var left = document.createElement('div');
       var nameDiv = document.createElement('div');
       nameDiv.className = 'user-row-name';
@@ -955,6 +1122,7 @@ ${rows}
       emailDiv.textContent = upn;
       left.appendChild(nameDiv);
       left.appendChild(emailDiv);
+      checkWrap.appendChild(left);
 
       var actions = document.createElement('div');
       actions.className = 'user-row-actions';
@@ -964,7 +1132,7 @@ ${rows}
       ));
       actions.appendChild(buildResetForm(u, q));
 
-      row.appendChild(left);
+      row.appendChild(checkWrap);
       row.appendChild(actions);
       container.appendChild(row);
     });
@@ -1106,6 +1274,391 @@ app.post('/admin/action', async (c) => {
   if (flash) params.set('flash', flash);
   if (flasherr) params.set('flasherr', flasherr);
   return c.redirect(`/admin?${params.toString()}`);
+});
+
+// Bulk enable / disable / reset. Takes a JSON body of userIds and runs
+// the same Graph call as the single-user action for each one, in
+// parallel. Returns a per-user result so the frontend can show exactly
+// which succeeded, which failed, and (for resets) each generated
+// password - since a bulk reset issues a different password per user,
+// there's no single value to show, unlike the single-user flash banner.
+app.post('/admin/bulk-action', async (c) => {
+  const session = await getSession(c);
+  if (!session || !isPortalAdmin(session)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  let payload;
+  try {
+    payload = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+
+  const userIds = Array.isArray(payload.userIds) ? payload.userIds.slice(0, 50) : [];
+  const action = payload.action;
+  if (!userIds.length || !['enable', 'disable', 'reset'].includes(action)) {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+
+  const results = await Promise.all(
+    userIds.map(async (userId) => {
+      if (action === 'reset') {
+        const tempPassword = generateTempPassword();
+        const r = await graphFetch(c, session, `/users/${encodeURIComponent(userId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            passwordProfile: { forceChangePasswordNextSignIn: true, password: tempPassword },
+          }),
+        });
+        if (!r.ok) console.error('Bulk reset failed for', userId, r.status, JSON.stringify(r.body));
+        return {
+          userId,
+          ok: r.ok,
+          password: r.ok ? tempPassword : undefined,
+          error: r.ok ? undefined : (r.body && r.body.error ? r.body.error.code : `status ${r.status}`),
+        };
+      }
+
+      const r = await graphFetch(c, session, `/users/${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ accountEnabled: action === 'enable' }),
+      });
+      if (!r.ok) console.error('Bulk', action, 'failed for', userId, r.status, JSON.stringify(r.body));
+      return {
+        userId,
+        ok: r.ok,
+        error: r.ok ? undefined : (r.body && r.body.error ? r.body.error.code : `status ${r.status}`),
+      };
+    })
+  );
+
+  return c.json({ results });
+});
+
+// Small date formatter shared by the Devices page - avoids relying on
+// locale/ICU behavior differing across runtimes, just trims the ISO
+// timestamp Graph returns down to something readable.
+function fmtDate(iso) {
+  if (!iso) return '&mdash;';
+  return iso.replace('T', ' ').slice(0, 16) + ' UTC';
+}
+
+// ============================================================
+// ROUTES - ADMIN / DEVICES (Intune managed devices)
+// Same auth + PortalAdmin role gate as the Users tab. Requires the
+// DeviceManagementManagedDevices.Read.All delegated permission (see
+// GRAPH_SCOPES) to be added + admin-consented in the app registration.
+// ============================================================
+app.get('/admin/devices', async (c) => {
+  const session = await getSession(c);
+  const error = c.req.query('error');
+
+  if (!session) {
+    const body = `
+<div class="login-page">
+<div class="login-box">
+<div class="lock-icon">&#x1F510;</div>
+<h2>Authorised Access Only</h2>
+<p>This portal is restricted to TMTCo administrators.<br>Sign in with your organisational account to continue.</p>
+<a href="/auth/login?next=/admin" class="ms-login-btn">${MS_LOGO}Sign in with Microsoft</a>
+${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan.admin@directory.themrtechguy.com for help.</div>` : ''}
+<p class="login-note">&#x1F512; Secured via Microsoft Entra ID &middot; TMTCo internal use only</p>
+</div>
+</div>`;
+    return shell('Sign In', body, 'admin');
+  }
+
+  if (!isPortalAdmin(session)) {
+    const body = `
+<div class="page-section top">
+<div class="placeholder-box">
+<div class="big-icon">&#x26D4;</div>
+<h3>Not Authorised</h3>
+<p>Your account is signed in but doesn't hold the admin role required for this panel.</p>
+</div>
+</div>`;
+    return shell('Devices', body, 'admin');
+  }
+
+  const r = await graphFetch(
+    c,
+    session,
+    `/deviceManagement/managedDevices?$select=id,deviceName,operatingSystem,osVersion,complianceState,lastSyncDateTime,approximateLastSignInDateTime,userDisplayName,userPrincipalName,manufacturer,model&$top=200`
+  );
+
+  let devices = [];
+  let loadFailed = false;
+  if (r.ok && r.body) {
+    devices = (r.body.value || []).sort((a, b) => (a.deviceName || '').localeCompare(b.deviceName || ''));
+  } else {
+    loadFailed = true;
+    console.error('Graph device list failed:', r.status, JSON.stringify(r.body));
+  }
+
+  const complianceClass = (state) => {
+    if (state === 'compliant') return 'compliant';
+    if (state === 'noncompliant') return 'noncompliant';
+    return 'other';
+  };
+
+  const deviceRows = devices.map((d) => `
+<tr>
+  <td>${escapeHtml(d.deviceName || '(unnamed)')}</td>
+  <td>${escapeHtml([d.operatingSystem, d.osVersion].filter(Boolean).join(' '))}</td>
+  <td><span class="compliance-pill ${complianceClass(d.complianceState)}">${escapeHtml(d.complianceState || 'unknown')}</span></td>
+  <td>${fmtDate(d.lastSyncDateTime)}</td>
+  <td>${fmtDate(d.approximateLastSignInDateTime)}</td>
+  <td>${escapeHtml(d.userDisplayName || d.userPrincipalName || '&mdash;')}</td>
+  <td>${escapeHtml([d.manufacturer, d.model].filter(Boolean).join(' ') || '&mdash;')}</td>
+</tr>`).join('');
+
+  const body = `
+<div class="page-section top">
+<div class="user-bar">
+<div class="user-bar-info">
+<div class="user-avatar">&#x1F464;</div>
+<div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
+</div>
+</div>
+<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
+</div>
+
+<div class="section-header">
+<div class="section-label">Authorised Portal &middot; Microsoft Graph &middot; Intune</div>
+<h2 class="section-title">Devices</h2>
+<p class="section-sub">Intune-managed devices in the directory, with compliance state and last check-in / sign-in.</p>
+</div>
+
+<div class="admin-tabs">
+<a href="/admin" class="admin-tab">Users</a>
+<a href="/admin/devices" class="admin-tab active">Devices</a>
+<a href="/admin/groups" class="admin-tab">Groups</a>
+</div>
+
+${loadFailed ? `<p class="no-results">Couldn't load devices &mdash; you may be missing the DeviceManagementManagedDevices.Read.All permission, or this tenant may not have Intune licensed. Check the Worker logs for the full Graph error.</p>` : ''}
+${!loadFailed && devices.length === 0 ? `<p class="no-results">No managed devices found.</p>` : ''}
+
+${devices.length > 0 ? `
+<div class="device-table-wrap">
+<table class="device-table">
+<thead><tr>
+<th>Device</th><th>OS</th><th>Compliance</th><th>Last check-in</th><th>Approx. last sign-in</th><th>Primary user</th><th>Model</th>
+</tr></thead>
+<tbody>${deviceRows}</tbody>
+</table>
+</div>` : ''}
+
+<div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
+</div>`;
+  return shell('Devices', body, 'admin');
+});
+
+// ============================================================
+// ROUTES - ADMIN / GROUPS
+// Lists directory groups and lets an admin send an email to any
+// mail-enabled group's address. Requires Group.Read.All (list) and
+// Mail.Send (compose/send) delegated permissions - see GRAPH_SCOPES.
+// ============================================================
+app.get('/admin/groups', async (c) => {
+  const session = await getSession(c);
+  const error = c.req.query('error');
+  const sent = c.req.query('sent');
+
+  if (!session) {
+    const body = `
+<div class="login-page">
+<div class="login-box">
+<div class="lock-icon">&#x1F510;</div>
+<h2>Authorised Access Only</h2>
+<p>This portal is restricted to TMTCo administrators.<br>Sign in with your organisational account to continue.</p>
+<a href="/auth/login?next=/admin" class="ms-login-btn">${MS_LOGO}Sign in with Microsoft</a>
+${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan.admin@directory.themrtechguy.com for help.</div>` : ''}
+<p class="login-note">&#x1F512; Secured via Microsoft Entra ID &middot; TMTCo internal use only</p>
+</div>
+</div>`;
+    return shell('Sign In', body, 'admin');
+  }
+
+  if (!isPortalAdmin(session)) {
+    const body = `
+<div class="page-section top">
+<div class="placeholder-box">
+<div class="big-icon">&#x26D4;</div>
+<h3>Not Authorised</h3>
+<p>Your account is signed in but doesn't hold the admin role required for this panel.</p>
+</div>
+</div>`;
+    return shell('Groups', body, 'admin');
+  }
+
+  const r = await graphFetch(
+    c,
+    session,
+    `/groups?$select=id,displayName,mail,mailEnabled,securityEnabled,groupTypes&$top=200`
+  );
+
+  let groups = [];
+  let loadFailed = false;
+  if (r.ok && r.body) {
+    groups = (r.body.value || []).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+  } else {
+    loadFailed = true;
+    console.error('Graph group list failed:', r.status, JSON.stringify(r.body));
+  }
+
+  const typeLabel = (g) => {
+    if (Array.isArray(g.groupTypes) && g.groupTypes.includes('Unified')) return 'Microsoft 365';
+    if (g.mailEnabled && g.securityEnabled) return 'Mail-enabled security';
+    if (g.mailEnabled) return 'Distribution';
+    if (g.securityEnabled) return 'Security';
+    return 'Group';
+  };
+
+  const groupRows = groups.map((g) => `
+<div class="group-row">
+  <div>
+    <div class="group-row-name">${escapeHtml(g.displayName || '(unnamed)')}<span class="group-type-pill">${escapeHtml(typeLabel(g))}</span></div>
+    <div class="group-row-meta">${g.mail ? escapeHtml(g.mail) : 'No email address (security group only)'}</div>
+  </div>
+  ${g.mail ? `<a href="/admin/groups/email?groupId=${encodeURIComponent(g.id)}&groupName=${encodeURIComponent(g.displayName || '')}&groupMail=${encodeURIComponent(g.mail)}" class="btn btn-ghost">Email group</a>` : ''}
+</div>`).join('');
+
+  const body = `
+<div class="page-section top">
+<div class="user-bar">
+<div class="user-bar-info">
+<div class="user-avatar">&#x1F464;</div>
+<div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
+</div>
+</div>
+<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
+</div>
+
+<div class="section-header">
+<div class="section-label">Authorised Portal &middot; Microsoft Graph</div>
+<h2 class="section-title">Groups</h2>
+<p class="section-sub">All directory groups. Mail-enabled groups can be emailed directly from here &mdash; sent from your own signed-in account via Microsoft Graph.</p>
+</div>
+
+<div class="admin-tabs">
+<a href="/admin" class="admin-tab">Users</a>
+<a href="/admin/devices" class="admin-tab">Devices</a>
+<a href="/admin/groups" class="admin-tab active">Groups</a>
+</div>
+
+${sent ? `<div class="flash-banner">Email sent successfully.</div>` : ''}
+${loadFailed ? `<p class="no-results">Couldn't load groups &mdash; you may be missing the Group.Read.All permission. Check the Worker logs for the full Graph error.</p>` : ''}
+${!loadFailed && groups.length === 0 ? `<p class="no-results">No groups found.</p>` : ''}
+
+${groupRows}
+
+<div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
+</div>`;
+  return shell('Groups', body, 'admin');
+});
+
+// Compose form for emailing a specific group. groupId/groupName/groupMail
+// are passed through as query params from the Groups list - re-validated
+// against Graph before sending (see POST handler below) so a tampered
+// groupMail value can't be used to send somewhere unintended.
+app.get('/admin/groups/email', async (c) => {
+  const session = await getSession(c);
+  if (!session || !isPortalAdmin(session)) return c.redirect('/admin/groups?error=1');
+
+  const groupId = c.req.query('groupId') || '';
+  const groupName = c.req.query('groupName') || '';
+  const groupMail = c.req.query('groupMail') || '';
+  const sendError = c.req.query('senderr') || '';
+
+  if (!groupId || !groupMail) return c.redirect('/admin/groups');
+
+  const body = `
+<div class="page-section top">
+<div class="user-bar">
+<div class="user-bar-info">
+<div class="user-avatar">&#x1F464;</div>
+<div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
+</div>
+</div>
+<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
+</div>
+
+<div class="section-header">
+<div class="section-label">Authorised Portal &middot; Microsoft Graph</div>
+<h2 class="section-title">Email ${escapeHtml(groupName || 'group')}</h2>
+<p class="section-sub">Sending to <strong>${escapeHtml(groupMail)}</strong>, from your own account (${escapeHtml(session.email)}) via Microsoft Graph.</p>
+</div>
+
+${sendError ? `<div class="flash-banner err">${escapeHtml(sendError)}</div>` : ''}
+
+<div class="compose-box">
+<form method="POST" action="/admin/groups/email/send">
+<input type="hidden" name="groupId" value="${escapeHtml(groupId)}">
+<input type="hidden" name="groupMail" value="${escapeHtml(groupMail)}">
+<label for="subjectInput">Subject</label>
+<input type="text" id="subjectInput" name="subject" required>
+<label for="bodyInput">Message</label>
+<textarea id="bodyInput" name="body" required placeholder="Write your message&hellip;"></textarea>
+<div class="compose-actions">
+<button type="submit" class="btn btn-primary">Send email</button>
+<a href="/admin/groups" class="btn btn-ghost">Cancel</a>
+</div>
+</form>
+</div>
+
+<div class="back-row"><a href="/admin/groups" class="btn btn-ghost">&larr; Back to Groups</a></div>
+</div>`;
+  return shell('Email Group', body, 'admin');
+});
+
+app.post('/admin/groups/email/send', async (c) => {
+  const session = await getSession(c);
+  if (!session || !isPortalAdmin(session)) return c.redirect('/admin/groups?error=1');
+
+  const form = await c.req.parseBody();
+  const groupId = form.groupId;
+  const subject = typeof form.subject === 'string' ? form.subject.trim() : '';
+  const messageBody = typeof form.body === 'string' ? form.body.trim() : '';
+
+  if (!groupId || !subject || !messageBody) {
+    return c.redirect('/admin/groups');
+  }
+
+  // Re-fetch the group's mail address from Graph rather than trusting the
+  // groupMail form field - closes off any tampering with the hidden field
+  // before we actually send anything.
+  const groupRes = await graphFetch(c, session, `/groups/${encodeURIComponent(groupId)}?$select=mail,displayName`);
+  if (!groupRes.ok || !groupRes.body || !groupRes.body.mail) {
+    console.error('Group lookup before send failed:', groupRes.status, JSON.stringify(groupRes.body));
+    return c.redirect(`/admin/groups/email?groupId=${encodeURIComponent(groupId)}&senderr=${encodeURIComponent("Couldn't verify the group's email address. Try again.")}`);
+  }
+
+  const r = await graphFetch(c, session, `/me/sendMail`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: {
+        subject,
+        body: { contentType: 'Text', content: messageBody },
+        toRecipients: [{ emailAddress: { address: groupRes.body.mail } }],
+      },
+      saveToSentItems: true,
+    }),
+  });
+
+  if (!r.ok) {
+    console.error('Graph sendMail failed:', r.status, JSON.stringify(r.body));
+    const graphMsg = r.body && r.body.error ? r.body.error.message : null;
+    return c.redirect(`/admin/groups/email?groupId=${encodeURIComponent(groupId)}&groupName=${encodeURIComponent(groupRes.body.displayName || '')}&groupMail=${encodeURIComponent(groupRes.body.mail)}&senderr=${encodeURIComponent('Failed to send' + (graphMsg ? ': ' + graphMsg : '.'))}`);
+  }
+
+  return c.redirect('/admin/groups?sent=1');
 });
 
 // ============================================================
