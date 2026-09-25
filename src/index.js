@@ -300,6 +300,72 @@ font-family:var(--body);font-size:.9rem}
 .compose-box input:focus,.compose-box textarea:focus{outline:none;border-color:var(--accent)}
 .compose-actions{margin-top:1.4rem;display:flex;gap:.75rem}
 
+/* USER DETAIL PANEL */
+.user-detail-panel{background:var(--surface2);border:1px solid var(--border);border-radius:10px;
+padding:1.2rem 1.4rem;margin:-.4rem 0 .8rem;font-size:.85rem}
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.9rem 1.4rem;margin-bottom:1.2rem}
+.detail-field span{display:block;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.2rem}
+.detail-field strong{color:var(--text);font-size:.88rem;font-weight:500}
+.detail-subhead{font-size:.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;
+letter-spacing:.04em;margin:1.1rem 0 .5rem;padding-top:.9rem;border-top:1px solid var(--border)}
+.detail-subhead:first-of-type{border-top:none;padding-top:0}
+.chip-row{display:flex;flex-wrap:wrap;gap:.4rem}
+.chip{display:inline-flex;align-items:center;gap:.4rem;background:var(--surface);border:1px solid var(--border);
+border-radius:100px;padding:.3rem .5rem .3rem .8rem;font-size:.78rem;color:var(--text)}
+.chip form{display:inline-flex;margin:0}
+.chip-remove{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.95rem;
+line-height:1;padding:0 .15rem;transition:color var(--transition)}
+.chip-remove:hover{color:#f87171}
+.add-group-row{display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap}
+.add-group-row select{flex:1;min-width:180px;padding:.5rem .8rem;border-radius:8px;
+border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--body);font-size:.82rem}
+.signin-row{display:flex;justify-content:space-between;gap:1rem;padding:.4rem 0;
+border-bottom:1px solid var(--border);font-size:.8rem;flex-wrap:wrap}
+.signin-row:last-child{border-bottom:none}
+.detail-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1.1rem;padding-top:1rem;border-top:1px solid var(--border)}
+.detail-actions .btn{padding:.4rem .85rem;font-size:.78rem}
+
+/* PAGE-LEVEL LINKS (Create user, Deleted users, etc.) */
+.page-links-row{display:flex;gap:.6rem;margin-bottom:1.2rem;flex-wrap:wrap}
+
+/* AUDIT LOG TABLE */
+.audit-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)}
+.audit-table{width:100%;border-collapse:collapse;font-size:.83rem}
+.audit-table th{text-align:left;padding:.75rem 1rem;background:var(--surface2);color:var(--muted);
+font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;
+border-bottom:1px solid var(--border);white-space:nowrap}
+.audit-table td{padding:.75rem 1rem;border-bottom:1px solid var(--border);color:var(--text)}
+.audit-table tr:last-child td{border-bottom:none}
+.result-pill{display:inline-block;font-size:.72rem;font-weight:500;padding:.15rem .55rem;border-radius:100px}
+.result-pill.success{background:rgba(74,222,128,.12);color:#4ade80}
+.result-pill.failure{background:rgba(248,113,113,.12);color:#f87171}
+
+/* LICENSES */
+.license-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+padding:1.1rem 1.4rem;margin-bottom:.8rem}
+.license-row-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.6rem;flex-wrap:wrap;gap:.5rem}
+.license-row-name{font-size:.92rem;color:var(--text);font-weight:500}
+.license-row-count{font-size:.8rem;color:var(--muted)}
+.license-bar-track{height:8px;border-radius:100px;background:var(--surface2);overflow:hidden}
+.license-bar-fill{height:100%;background:var(--accent);border-radius:100px}
+.license-bar-fill.high{background:#f87171}
+
+/* CREATE USER / CREATE GROUP FORMS */
+.form-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+padding:1.6rem;max-width:640px}
+.form-box label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:.4rem;margin-top:1rem}
+.form-box label:first-child{margin-top:0}
+.form-box input[type="text"],.form-box select{width:100%;padding:.7rem 1rem;
+border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);
+font-family:var(--body);font-size:.9rem}
+.form-box input:focus,.form-box select:focus{outline:none;border-color:var(--accent)}
+.form-hint{font-size:.76rem;color:var(--muted);margin-top:.3rem}
+.form-actions{margin-top:1.4rem;display:flex;gap:.75rem}
+
+/* DEVICE ACTIONS */
+.device-actions-cell{display:flex;gap:.4rem;flex-wrap:wrap}
+.device-actions-cell .btn{padding:.35rem .7rem;font-size:.75rem}
+
 /* ID CALLBACK / SERVICES PLACEHOLDER */
 .placeholder-box{background:var(--surface);border:1px solid var(--border);
 border-radius:var(--radius);padding:3rem 2rem;text-align:center;max-width:560px;margin:0 auto}
@@ -547,9 +613,16 @@ function sanitizeNext(path) {
 // DeviceManagementManagedDevices.Read.All - list Intune managed devices.
 // Group.Read.All - list directory groups.
 // Mail.Send - send an email (as the signed-in admin) to a group's mail address.
+//
+// Added for the expanded admin feature set:
+// AuditLog.Read.All - directory audit log + per-user sign-in history.
+// GroupMember.ReadWrite.All - add/remove a user from a group.
+// Organization.Read.All - list subscribed licenses/SKUs.
+// DeviceManagementManagedDevices.PrivilegedOperations.All - sync/retire/wipe a device.
 const GRAPH_SCOPES =
   'openid profile email offline_access User.Read User.ReadWrite.All Directory.Read.All ' +
-  'User-PasswordProfile.ReadWrite.All DeviceManagementManagedDevices.Read.All Group.Read.All Mail.Send';
+  'User-PasswordProfile.ReadWrite.All DeviceManagementManagedDevices.Read.All Group.Read.All Mail.Send ' +
+  'AuditLog.Read.All GroupMember.ReadWrite.All Organization.Read.All DeviceManagementManagedDevices.PrivilegedOperations.All';
 
 // ============================================================
 // GRAPH / TOKEN HELPERS
@@ -822,7 +895,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
     const enabled = !!u.accountEnabled;
     const upn = u.userPrincipalName || u.mail || '';
     return `
-<div class="user-row">
+<div class="user-row" data-userid="${escapeHtml(u.id)}">
   <div class="user-row-check">
     <input type="checkbox" class="bulk-check" value="${escapeHtml(u.id)}" data-name="${escapeHtml(u.displayName || upn)}">
     <div>
@@ -835,6 +908,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
     </div>
   </div>
   <div class="user-row-actions">
+    <button type="button" class="btn btn-ghost details-btn" data-userid="${escapeHtml(u.id)}" data-name="${escapeHtml(u.displayName || upn)}">Details</button>
     <form method="POST" action="/admin/action">
       <input type="hidden" name="userId" value="${escapeHtml(u.id)}">
       <input type="hidden" name="q" value="${escapeHtml(search)}">
@@ -879,10 +953,17 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 <a href="/admin" class="admin-tab active">Users</a>
 <a href="/admin/devices" class="admin-tab">Devices</a>
 <a href="/admin/groups" class="admin-tab">Groups</a>
+<a href="/admin/audit" class="admin-tab">Audit Log</a>
+<a href="/admin/licenses" class="admin-tab">Licenses</a>
 </div>
 
 ${flashMsg ? `<div class="flash-banner">${flashMsg}</div>` : ''}
 ${flashErr ? `<div class="flash-banner err">${flashErr}</div>` : ''}
+
+<div class="page-links-row">
+<a href="/admin/users/new" class="btn btn-ghost">+ Create user</a>
+<a href="/admin/deleted-users" class="btn btn-ghost">Deleted users</a>
+</div>
 
 <form method="GET" action="/admin" class="admin-search" id="adminSearchForm">
 <input type="text" name="q" id="adminSearchInput" value="${escapeHtml(search)}" placeholder="Start typing a name or email&hellip;" autocomplete="off">
@@ -985,6 +1066,249 @@ ${rows}
   if (enableBtn) enableBtn.addEventListener('click', function(){ runBulk('enable'); });
   if (disableBtn) disableBtn.addEventListener('click', function(){ runBulk('disable'); });
   if (resetBtn) resetBtn.addEventListener('click', function(){ runBulk('reset'); });
+
+
+  // ---- User Details panel (expand/collapse, group management) ----
+  var groupsCache = null; // lazy-loaded list of {id, displayName}, fetched once
+
+  function loadGroupsList() {
+    if (groupsCache) return Promise.resolve(groupsCache);
+    return fetch('/admin/api/groups-list')
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        groupsCache = data.groups || [];
+        return groupsCache;
+      })
+      .catch(function(){ return []; });
+  }
+
+  function fieldEl(label, value) {
+    var wrap = document.createElement('div');
+    wrap.className = 'detail-field';
+    var span = document.createElement('span');
+    span.textContent = label;
+    var strong = document.createElement('strong');
+    strong.textContent = value || '\u2014';
+    wrap.appendChild(span);
+    wrap.appendChild(strong);
+    return wrap;
+  }
+
+  function subhead(text) {
+    var h = document.createElement('div');
+    h.className = 'detail-subhead';
+    h.textContent = text;
+    return h;
+  }
+
+  function miniActionForm(userId, actionValue, label, btnClass, confirmMsg, extraFields) {
+    var f = document.createElement('form');
+    f.method = 'POST';
+    f.action = '/admin/action';
+    f.style.display = 'inline';
+    if (confirmMsg) {
+      f.addEventListener('submit', function(e){
+        if (!confirm(confirmMsg)) e.preventDefault();
+      });
+    }
+    var fields = [['userId', userId], ['action', actionValue]].concat(extraFields || []);
+    fields.forEach(function(pair){
+      var inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = pair[0];
+      inp.value = pair[1];
+      f.appendChild(inp);
+    });
+    var btn = document.createElement('button');
+    btn.type = 'submit';
+    btn.className = btnClass;
+    btn.textContent = label;
+    f.appendChild(btn);
+    return f;
+  }
+
+  function renderDetailPanel(userId, userName, data) {
+    var p = data.profile || {};
+    var panel = document.createElement('div');
+    panel.className = 'user-detail-panel';
+
+    var grid = document.createElement('div');
+    grid.className = 'detail-grid';
+    grid.appendChild(fieldEl('Job title', p.jobTitle));
+    grid.appendChild(fieldEl('Department', p.department));
+    grid.appendChild(fieldEl('Office', p.officeLocation));
+    grid.appendChild(fieldEl('Manager', data.manager));
+    grid.appendChild(fieldEl('Phone', p.mobilePhone));
+    grid.appendChild(fieldEl('Created', p.createdDateTime ? p.createdDateTime.slice(0, 10) : ''));
+    panel.appendChild(grid);
+
+    panel.appendChild(subhead('Group memberships'));
+    var groupChips = document.createElement('div');
+    groupChips.className = 'chip-row';
+    var groups = data.groups || [];
+    if (!groups.length) {
+      var noGroups = document.createElement('span');
+      noGroups.style.color = 'var(--muted)';
+      noGroups.style.fontSize = '.82rem';
+      noGroups.textContent = 'No group memberships.';
+      groupChips.appendChild(noGroups);
+    } else {
+      groups.forEach(function(g){
+        var chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.appendChild(document.createTextNode(g.displayName));
+        var removeForm = miniActionForm(
+          userId, 'removegroup', '\u00d7', 'chip-remove',
+          'Remove ' + userName + ' from ' + g.displayName + '?',
+          [['groupId', g.id]]
+        );
+        chip.appendChild(removeForm);
+        groupChips.appendChild(chip);
+      });
+    }
+    panel.appendChild(groupChips);
+
+    var addRow = document.createElement('div');
+    addRow.className = 'add-group-row';
+    var select = document.createElement('select');
+    select.className = 'group-select';
+    var loadingOpt = document.createElement('option');
+    loadingOpt.value = '';
+    loadingOpt.textContent = 'Loading groups\u2026';
+    select.appendChild(loadingOpt);
+    var addForm = document.createElement('form');
+    addForm.method = 'POST';
+    addForm.action = '/admin/action';
+    addForm.style.display = 'inline-flex';
+    addForm.style.gap = '.5rem';
+    [['userId', userId], ['action', 'addgroup']].forEach(function(pair){
+      var inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = pair[0]; inp.value = pair[1];
+      addForm.appendChild(inp);
+    });
+    var hiddenGroupId = document.createElement('input');
+    hiddenGroupId.type = 'hidden';
+    hiddenGroupId.name = 'groupId';
+    addForm.appendChild(hiddenGroupId);
+    var addBtn = document.createElement('button');
+    addBtn.type = 'submit';
+    addBtn.className = 'btn btn-ghost';
+    addBtn.textContent = 'Add to group';
+    addForm.appendChild(addBtn);
+    addRow.appendChild(select);
+    addRow.appendChild(addForm);
+    panel.appendChild(addRow);
+
+    loadGroupsList().then(function(allGroups){
+      select.innerHTML = '';
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Select a group\u2026';
+      select.appendChild(placeholder);
+      allGroups.forEach(function(g){
+        var opt = document.createElement('option');
+        opt.value = g.id;
+        opt.textContent = g.displayName;
+        select.appendChild(opt);
+      });
+      select.addEventListener('change', function(){ hiddenGroupId.value = select.value; });
+    });
+
+    panel.appendChild(subhead('Licenses'));
+    var licenses = data.licenses || [];
+    if (!licenses.length) {
+      var noLic = document.createElement('span');
+      noLic.style.color = 'var(--muted)';
+      noLic.style.fontSize = '.82rem';
+      noLic.textContent = 'No licenses assigned.';
+      panel.appendChild(noLic);
+    } else {
+      var licRow = document.createElement('div');
+      licRow.className = 'chip-row';
+      licenses.forEach(function(l){
+        var chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = l;
+        licRow.appendChild(chip);
+      });
+      panel.appendChild(licRow);
+    }
+
+    panel.appendChild(subhead('Recent sign-ins'));
+    var signIns = data.signIns || [];
+    if (!signIns.length) {
+      var noSignIns = document.createElement('span');
+      noSignIns.style.color = 'var(--muted)';
+      noSignIns.style.fontSize = '.82rem';
+      noSignIns.textContent = 'No recent sign-in activity available.';
+      panel.appendChild(noSignIns);
+    } else {
+      signIns.forEach(function(s){
+        var row = document.createElement('div');
+        row.className = 'signin-row';
+        var left = document.createElement('span');
+        left.textContent = (s.createdDateTime || '').replace('T', ' ').slice(0, 16) + ' UTC \u2014 ' + (s.appDisplayName || 'Unknown app');
+        var right = document.createElement('span');
+        var ok = s.status && s.status.errorCode === 0;
+        right.className = ok ? '' : 'status-pill disabled';
+        right.textContent = (ok ? 'Success' : 'Failed') + (s.ipAddress ? ' \u00b7 ' + s.ipAddress : '');
+        row.appendChild(left);
+        row.appendChild(right);
+        panel.appendChild(row);
+      });
+    }
+
+    var actionsRow = document.createElement('div');
+    actionsRow.className = 'detail-actions';
+    actionsRow.appendChild(miniActionForm(
+      userId, 'revoke', 'Revoke all sessions', 'btn btn-ghost',
+      'Revoke all active sessions for ' + userName + '? They will be signed out everywhere immediately.'
+    ));
+    actionsRow.appendChild(miniActionForm(
+      userId, 'delete', 'Delete user', 'btn btn-danger',
+      'Delete ' + userName + '? This can be restored from Deleted Users within 30 days.'
+    ));
+    panel.appendChild(actionsRow);
+
+    return panel;
+  }
+
+  container.addEventListener('click', function(e){
+    var btn = e.target.closest('.details-btn');
+    if (!btn) return;
+    var userId = btn.getAttribute('data-userid');
+    var userName = btn.getAttribute('data-name');
+    var row = btn.closest('.user-row');
+    var existing = row.nextElementSibling;
+
+    if (existing && existing.classList && existing.classList.contains('user-detail-panel')) {
+      existing.remove();
+      btn.textContent = 'Details';
+      return;
+    }
+    // Close any other open panel first, one at a time keeps it simple.
+    container.querySelectorAll('.user-detail-panel').forEach(function(p){ p.remove(); });
+    container.querySelectorAll('.details-btn').forEach(function(b){ b.textContent = 'Details'; });
+
+    btn.textContent = 'Loading\u2026';
+    fetch('/admin/api/user-detail?userId=' + encodeURIComponent(userId))
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        btn.textContent = 'Hide details';
+        if (data.error) {
+          var errP = document.createElement('p');
+          errP.className = 'no-results';
+          errP.textContent = 'Could not load details for this user.';
+          row.parentNode.insertBefore(errP, row.nextSibling);
+          return;
+        }
+        var panel = renderDetailPanel(userId, userName, data);
+        row.parentNode.insertBefore(panel, row.nextSibling);
+      })
+      .catch(function(){
+        btn.textContent = 'Details';
+      });
+  });
 })();
 </script>
 
@@ -1099,6 +1423,7 @@ ${rows}
 
       var row = document.createElement('div');
       row.className = 'user-row';
+      row.setAttribute('data-userid', u.id);
 
       var checkWrap = document.createElement('div');
       checkWrap.className = 'user-row-check';
@@ -1126,6 +1451,13 @@ ${rows}
 
       var actions = document.createElement('div');
       actions.className = 'user-row-actions';
+      var detailsBtn = document.createElement('button');
+      detailsBtn.type = 'button';
+      detailsBtn.className = 'btn btn-ghost details-btn';
+      detailsBtn.setAttribute('data-userid', u.id);
+      detailsBtn.setAttribute('data-name', displayLabel);
+      detailsBtn.textContent = 'Details';
+      actions.appendChild(detailsBtn);
       actions.appendChild(buildActionForm(
         u, enabled ? 'disable' : 'enable', enabled ? 'Disable account' : 'Enable account',
         enabled ? 'btn-danger' : 'btn-ghost', null, q
@@ -1204,6 +1536,84 @@ app.get('/admin/api/search', async (c) => {
   return c.json({ results: r.results });
 });
 
+// Powers the "Details" panel on the Users tab: profile fields, manager,
+// group memberships, assigned licenses, and recent sign-in activity for
+// one user. Secondary calls (manager/groups/licenses/signIns) are allowed
+// to fail individually without failing the whole panel - a user with no
+// manager set, for instance, shouldn't break the rest of the detail view.
+app.get('/admin/api/user-detail', async (c) => {
+  const session = await getSession(c);
+  if (!session || !isPortalAdmin(session)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const userId = c.req.query('userId') || '';
+  if (!userId) return c.json({ error: 'missing_userId' }, 400);
+
+  const profileRes = await graphFetch(
+    c,
+    session,
+    `/users/${encodeURIComponent(userId)}?$select=id,displayName,userPrincipalName,mail,jobTitle,department,officeLocation,mobilePhone,accountEnabled,createdDateTime`
+  );
+  if (!profileRes.ok || !profileRes.body) {
+    console.error('User detail profile fetch failed:', profileRes.status, JSON.stringify(profileRes.body));
+    return c.json({ error: 'graph_error' }, 502);
+  }
+
+  const [managerRes, groupsRes, licensesRes, signInsRes] = await Promise.all([
+    graphFetch(c, session, `/users/${encodeURIComponent(userId)}/manager?$select=displayName`),
+    graphFetch(c, session, `/users/${encodeURIComponent(userId)}/memberOf?$select=id,displayName`),
+    graphFetch(c, session, `/users/${encodeURIComponent(userId)}/licenseDetails?$select=skuPartNumber`),
+    // No $orderby here deliberately - signIns is subject to the same
+    // $filter + $orderby "advanced query" restriction seen on /users
+    // earlier in this project. Results are typically already recent-first.
+    graphFetch(c, session, `/auditLogs/signIns?$filter=userId eq '${userId.replace(/'/g, "''")}'&$top=5`),
+  ]);
+
+  const manager = managerRes.ok && managerRes.body ? managerRes.body.displayName : null;
+
+  // memberOf can include directory roles alongside actual groups -
+  // only keep entries that are genuinely groups.
+  const groups = (groupsRes.ok && groupsRes.body ? groupsRes.body.value || [] : [])
+    .filter((g) => g['@odata.type'] === '#microsoft.graph.group' || !g['@odata.type'])
+    .map((g) => ({ id: g.id, displayName: g.displayName }));
+
+  const licenses = (licensesRes.ok && licensesRes.body ? licensesRes.body.value || [] : [])
+    .map((l) => l.skuPartNumber)
+    .filter(Boolean);
+
+  const signIns = signInsRes.ok && signInsRes.body ? signInsRes.body.value || [] : [];
+  if (!signInsRes.ok) {
+    console.error('Sign-in history fetch failed (non-fatal):', signInsRes.status, JSON.stringify(signInsRes.body));
+  }
+
+  return c.json({
+    profile: profileRes.body,
+    manager,
+    groups,
+    licenses,
+    signIns,
+  });
+});
+
+// Powers the "Add to group" dropdown in the Details panel - a lightweight
+// id+name list rather than the full Groups tab payload.
+app.get('/admin/api/groups-list', async (c) => {
+  const session = await getSession(c);
+  if (!session || !isPortalAdmin(session)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const r = await graphFetch(c, session, `/groups?$select=id,displayName&$top=200`);
+  if (!r.ok || !r.body) {
+    console.error('Groups list (for dropdown) failed:', r.status, JSON.stringify(r.body));
+    return c.json({ error: 'graph_error', groups: [] }, 502);
+  }
+
+  const groups = (r.body.value || []).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+  return c.json({ groups });
+});
+
 app.post('/admin/action', async (c) => {
   const session = await getSession(c);
   if (!session || !isPortalAdmin(session)) {
@@ -1214,9 +1624,14 @@ app.post('/admin/action', async (c) => {
   const userId = form.userId;
   const action = form.action;
   const q = typeof form.q === 'string' ? form.q : '';
+  const groupId = typeof form.groupId === 'string' ? form.groupId : '';
 
-  if (!userId || !['enable', 'disable', 'reset'].includes(action)) {
+  const validActions = ['enable', 'disable', 'reset', 'revoke', 'delete', 'addgroup', 'removegroup', 'restore'];
+  if (!userId || !validActions.includes(action)) {
     return c.redirect(`/admin?q=${encodeURIComponent(q)}&flasherr=${encodeURIComponent('Invalid request.')}`);
+  }
+  if ((action === 'addgroup' || action === 'removegroup') && !groupId) {
+    return c.redirect(`/admin?q=${encodeURIComponent(q)}&flasherr=${encodeURIComponent('Missing group.')}`);
   }
 
   let flash = '';
@@ -1268,6 +1683,57 @@ app.post('/admin/action', async (c) => {
       const graphMsg = r.body && r.body.error ? r.body.error.message : null;
       flasherr = `Failed to reset password (Graph returned status ${r.status}: ${escapeHtml(r.body && r.body.error ? r.body.error.code : 'unknown')})${graphMsg ? ' &mdash; ' + escapeHtml(graphMsg) : ''}.`;
     }
+  }
+
+  if (action === 'revoke') {
+    const r = await graphFetch(c, session, `/users/${encodeURIComponent(userId)}/revokeSignInSessions`, {
+      method: 'POST',
+    });
+    if (r.ok) {
+      flash = 'All active sessions revoked &mdash; the user has been signed out everywhere.';
+    } else {
+      console.error('Graph revokeSignInSessions failed:', r.status, JSON.stringify(r.body));
+      flasherr = `Failed to revoke sessions (Graph returned status ${r.status}).`;
+    }
+  }
+
+  if (action === 'delete') {
+    const r = await graphFetch(c, session, `/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+    if (r.ok) {
+      flash = 'User deleted. It can be restored from Deleted Users within 30 days.';
+    } else {
+      console.error('Graph user delete failed:', r.status, JSON.stringify(r.body));
+      flasherr = `Failed to delete user (Graph returned status ${r.status}).`;
+    }
+  }
+
+  if (action === 'addgroup' || action === 'removegroup') {
+    const r =
+      action === 'addgroup'
+        ? await graphFetch(c, session, `/groups/${encodeURIComponent(groupId)}/members/$ref`, {
+            method: 'POST',
+            body: JSON.stringify({ '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${userId}` }),
+          })
+        : await graphFetch(c, session, `/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}/$ref`, {
+            method: 'DELETE',
+          });
+    if (r.ok) {
+      flash = action === 'addgroup' ? 'Added to group.' : 'Removed from group.';
+    } else {
+      console.error(`Graph ${action} failed:`, r.status, JSON.stringify(r.body));
+      flasherr = `Failed to update group membership (Graph returned status ${r.status}).`;
+    }
+  }
+
+  if (action === 'restore') {
+    const r = await graphFetch(c, session, `/directory/deletedItems/${encodeURIComponent(userId)}/restore`, {
+      method: 'POST',
+    });
+    if (r.ok) {
+      return c.redirect(`/admin/deleted-users?flash=${encodeURIComponent('User restored successfully.')}`);
+    }
+    console.error('Graph restore failed:', r.status, JSON.stringify(r.body));
+    return c.redirect(`/admin/deleted-users?flasherr=${encodeURIComponent('Failed to restore user (status ' + r.status + ').')}`);
   }
 
   const params = new URLSearchParams({ q });
@@ -1336,12 +1802,60 @@ app.post('/admin/bulk-action', async (c) => {
   return c.json({ results });
 });
 
-// Small date formatter shared by the Devices page - avoids relying on
+// Small date formatter shared across admin pages - avoids relying on
 // locale/ICU behavior differing across runtimes, just trims the ISO
 // timestamp Graph returns down to something readable.
 function fmtDate(iso) {
   if (!iso) return '&mdash;';
   return iso.replace('T', ' ').slice(0, 16) + ' UTC';
+}
+
+// Shared tab bar for every /admin/* page, so adding a new tab only
+// means editing this list once instead of five near-duplicate blocks.
+function adminTabs(active) {
+  const tabs = [
+    ['Users', '/admin', 'users'],
+    ['Devices', '/admin/devices', 'devices'],
+    ['Groups', '/admin/groups', 'groups'],
+    ['Audit Log', '/admin/audit', 'audit'],
+    ['Licenses', '/admin/licenses', 'licenses'],
+  ];
+  return `<div class="admin-tabs">${tabs
+    .map(([label, href, key]) => `<a href="${href}" class="admin-tab${key === active ? ' active' : ''}">${label}</a>`)
+    .join('')}</div>`;
+}
+
+// Shared "not signed in" / "not authorised" gate for every /admin/* page.
+// Returns a Response to send back immediately, or null if the session is
+// fine and the caller should keep rendering its own page.
+function adminGate(c, session, pageTitle) {
+  const error = c.req.query('error');
+  if (!session) {
+    const body = `
+<div class="login-page">
+<div class="login-box">
+<div class="lock-icon">&#x1F510;</div>
+<h2>Authorised Access Only</h2>
+<p>This portal is restricted to TMTCo administrators.<br>Sign in with your organisational account to continue.</p>
+<a href="/auth/login?next=/admin" class="ms-login-btn">${MS_LOGO}Sign in with Microsoft</a>
+${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan.admin@directory.themrtechguy.com for help.</div>` : ''}
+<p class="login-note">&#x1F512; Secured via Microsoft Entra ID &middot; TMTCo internal use only</p>
+</div>
+</div>`;
+    return shell('Sign In', body, 'admin');
+  }
+  if (!isPortalAdmin(session)) {
+    const body = `
+<div class="page-section top">
+<div class="placeholder-box">
+<div class="big-icon">&#x26D4;</div>
+<h3>Not Authorised</h3>
+<p>Your account is signed in but doesn't hold the admin role required for this panel.</p>
+</div>
+</div>`;
+    return shell(pageTitle, body, 'admin');
+  }
+  return null;
 }
 
 // ============================================================
@@ -1435,6 +1949,8 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 <a href="/admin" class="admin-tab">Users</a>
 <a href="/admin/devices" class="admin-tab active">Devices</a>
 <a href="/admin/groups" class="admin-tab">Groups</a>
+<a href="/admin/audit" class="admin-tab">Audit Log</a>
+<a href="/admin/licenses" class="admin-tab">Licenses</a>
 </div>
 
 ${loadFailed ? `<p class="no-results">Couldn't load devices &mdash; you may be missing the DeviceManagementManagedDevices.Read.All permission, or this tenant may not have Intune licensed. Check the Worker logs for the full Graph error.</p>` : ''}
@@ -1548,6 +2064,8 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 <a href="/admin" class="admin-tab">Users</a>
 <a href="/admin/devices" class="admin-tab">Devices</a>
 <a href="/admin/groups" class="admin-tab active">Groups</a>
+<a href="/admin/audit" class="admin-tab">Audit Log</a>
+<a href="/admin/licenses" class="admin-tab">Licenses</a>
 </div>
 
 ${sent ? `<div class="flash-banner">Email sent successfully.</div>` : ''}
