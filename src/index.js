@@ -1859,6 +1859,192 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 }
 
 // ============================================================
+// ROUTES - ADMIN / DELETED USERS
+// Recently soft-deleted user accounts, recoverable within Entra ID's
+// 30-day window. Restoring uses the same /admin/action route with
+// action=restore (see that handler for the redirect-target branching).
+// ============================================================
+app.get('/admin/deleted-users', async (c) => {
+  const session = await getSession(c);
+  const gate = adminGate(c, session, 'Deleted Users');
+  if (gate) return gate;
+
+  const flashMsg = c.req.query('flash') || '';
+  const flashErr = c.req.query('flasherr') || '';
+
+  const r = await graphFetch(
+    c,
+    session,
+    `/directory/deletedItems/microsoft.graph.user?$select=id,displayName,userPrincipalName,deletedDateTime&$top=100`
+  );
+
+  let items = [];
+  let loadFailed = false;
+  if (r.ok && r.body) {
+    items = r.body.value || [];
+  } else {
+    loadFailed = true;
+    console.error('Graph deleted users list failed:', r.status, JSON.stringify(r.body));
+  }
+
+  const rows = items.map((u) => `
+<div class="user-row">
+  <div>
+    <div class="user-row-name">${escapeHtml(u.displayName || '(no name)')}</div>
+    <div class="user-row-email">${escapeHtml(u.userPrincipalName || '')} &middot; deleted ${fmtDate(u.deletedDateTime)}</div>
+  </div>
+  <div class="user-row-actions">
+    <form method="POST" action="/admin/action" onsubmit="return confirm('Restore ${escapeHtml((u.displayName || u.userPrincipalName || '').replace(/'/g, "\\'"))}?');">
+      <input type="hidden" name="userId" value="${escapeHtml(u.id)}">
+      <input type="hidden" name="action" value="restore">
+      <button type="submit" class="btn btn-ghost">Restore</button>
+    </form>
+  </div>
+</div>`).join('');
+
+  const body = `
+<div class="page-section top">
+<div class="user-bar">
+<div class="user-bar-info">
+<div class="user-avatar">&#x1F464;</div>
+<div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
+</div>
+</div>
+<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
+</div>
+
+<div class="section-header">
+<div class="section-label">Authorised Portal &middot; Microsoft Graph</div>
+<h2 class="section-title">Deleted Users</h2>
+<p class="section-sub">Soft-deleted accounts, recoverable within Entra ID's 30-day retention window.</p>
+</div>
+
+${adminTabs('users')}
+
+${flashMsg ? `<div class="flash-banner">${flashMsg}</div>` : ''}
+${flashErr ? `<div class="flash-banner err">${flashErr}</div>` : ''}
+${loadFailed ? `<p class="no-results">Couldn't load deleted users. Check the Worker logs for the full Graph error.</p>` : ''}
+${!loadFailed && items.length === 0 ? `<p class="no-results">No deleted users found.</p>` : ''}
+${rows}
+
+<div class="back-row"><a href="/admin" class="btn btn-ghost">&larr; Back to Users</a></div>
+</div>`;
+  return shell('Deleted Users', body, 'admin');
+});
+
+// ============================================================
+// ROUTES - ADMIN / CREATE USER
+// ============================================================
+app.get('/admin/users/new', async (c) => {
+  const session = await getSession(c);
+  const gate = adminGate(c, session, 'Create User');
+  if (gate) return gate;
+
+  const formErr = c.req.query('err') || '';
+
+  const body = `
+<div class="page-section top">
+<div class="user-bar">
+<div class="user-bar-info">
+<div class="user-avatar">&#x1F464;</div>
+<div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
+</div>
+</div>
+<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
+</div>
+
+<div class="section-header">
+<div class="section-label">Authorised Portal &middot; Microsoft Graph</div>
+<h2 class="section-title">Create User</h2>
+<p class="section-sub">Creates a new Entra ID account. A temporary password is generated and shown once after creation, unless you set one below.</p>
+</div>
+
+${adminTabs('users')}
+
+${formErr ? `<div class="flash-banner err">${escapeHtml(formErr)}</div>` : ''}
+
+<div class="form-box">
+<form method="POST" action="/admin/users/new">
+<label for="displayNameInput">Display name</label>
+<input type="text" id="displayNameInput" name="displayName" required placeholder="Jane Smith">
+
+<label for="upnInput">User principal name (email)</label>
+<input type="text" id="upnInput" name="userPrincipalName" required placeholder="jane.smith@tmtcoau.com">
+
+<label for="passwordInput">Initial password</label>
+<input type="text" id="passwordInput" name="password" placeholder="Leave blank to auto-generate" autocomplete="off" spellcheck="false">
+<p class="form-hint">Minimum 8 characters if set. Leave blank to auto-generate one.</p>
+
+<label for="jobTitleInput">Job title (optional)</label>
+<input type="text" id="jobTitleInput" name="jobTitle">
+
+<label for="departmentInput">Department (optional)</label>
+<input type="text" id="departmentInput" name="department">
+
+<div class="form-actions">
+<button type="submit" class="btn btn-primary">Create user</button>
+<a href="/admin" class="btn btn-ghost">Cancel</a>
+</div>
+</form>
+</div>
+
+<div class="back-row"><a href="/admin" class="btn btn-ghost">&larr; Back to Users</a></div>
+</div>`;
+  return shell('Create User', body, 'admin');
+});
+
+app.post('/admin/users/new', async (c) => {
+  const session = await getSession(c);
+  if (!session || !isPortalAdmin(session)) return c.redirect('/admin?error=1');
+
+  const form = await c.req.parseBody();
+  const displayName = typeof form.displayName === 'string' ? form.displayName.trim() : '';
+  const upn = typeof form.userPrincipalName === 'string' ? form.userPrincipalName.trim() : '';
+  const customPassword = typeof form.password === 'string' ? form.password.trim() : '';
+  const jobTitle = typeof form.jobTitle === 'string' ? form.jobTitle.trim() : '';
+  const department = typeof form.department === 'string' ? form.department.trim() : '';
+
+  if (!displayName || !upn || !upn.includes('@')) {
+    return c.redirect(`/admin/users/new?err=${encodeURIComponent('Display name and a valid user principal name are required.')}`);
+  }
+  if (customPassword && customPassword.length < 8) {
+    return c.redirect(`/admin/users/new?err=${encodeURIComponent('Password must be at least 8 characters.')}`);
+  }
+
+  const passwordToSet = customPassword || generateTempPassword();
+  // mailNickname is required by Graph and must be unique-ish/simple -
+  // derive it from the UPN's local part, stripped to safe characters.
+  const mailNickname = upn.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64) || 'user';
+
+  const body = {
+    accountEnabled: true,
+    displayName,
+    userPrincipalName: upn,
+    mailNickname,
+    passwordProfile: { forceChangePasswordNextSignIn: true, password: passwordToSet },
+  };
+  if (jobTitle) body.jobTitle = jobTitle;
+  if (department) body.department = department;
+
+  const r = await graphFetch(c, session, `/users`, { method: 'POST', body: JSON.stringify(body) });
+
+  if (!r.ok) {
+    console.error('Graph create user failed:', r.status, JSON.stringify(r.body));
+    const graphMsg = r.body && r.body.error ? r.body.error.message : null;
+    return c.redirect(`/admin/users/new?err=${encodeURIComponent('Failed to create user' + (graphMsg ? ': ' + graphMsg : '.'))}`);
+  }
+
+  const flash = customPassword
+    ? `User created successfully.`
+    : `User created. Temporary password (share securely &mdash; shown once only): <strong>${escapeHtml(passwordToSet)}</strong>`;
+  return c.redirect(`/admin?flash=${encodeURIComponent(flash)}`);
+});
+
+// ============================================================
 // ROUTES - ADMIN / DEVICES (Intune managed devices)
 // Same auth + PortalAdmin role gate as the Users tab. Requires the
 // DeviceManagementManagedDevices.Read.All delegated permission (see
@@ -1924,6 +2110,13 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
   <td>${fmtDate(d.lastSyncDateTime)}</td>
   <td>${escapeHtml(d.userDisplayName || d.userPrincipalName || '&mdash;')}</td>
   <td>${escapeHtml([d.manufacturer, d.model].filter(Boolean).join(' ') || '&mdash;')}</td>
+  <td>
+    <div class="device-actions-cell">
+      <button type="button" class="btn btn-ghost device-sync-btn" data-deviceid="${escapeHtml(d.id)}" data-devicename="${escapeHtml(d.deviceName || '')}">Sync</button>
+      <button type="button" class="btn btn-ghost device-retire-btn" data-deviceid="${escapeHtml(d.id)}" data-devicename="${escapeHtml(d.deviceName || '')}">Retire</button>
+      <button type="button" class="btn btn-danger device-wipe-btn" data-deviceid="${escapeHtml(d.id)}" data-devicename="${escapeHtml(d.deviceName || '')}">Wipe</button>
+    </div>
+  </td>
 </tr>`).join('');
 
   const body = `
@@ -1960,15 +2153,129 @@ ${devices.length > 0 ? `
 <div class="device-table-wrap">
 <table class="device-table">
 <thead><tr>
-<th>Device</th><th>OS</th><th>Compliance</th><th>Last check-in</th><th>Primary user</th><th>Model</th>
+<th>Device</th><th>OS</th><th>Compliance</th><th>Last check-in</th><th>Primary user</th><th>Model</th><th>Actions</th>
 </tr></thead>
 <tbody>${deviceRows}</tbody>
 </table>
 </div>` : ''}
 
 <div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
-</div>`;
+</div>
+
+<script>
+(function(){
+  var statusMsg = null;
+
+  function showAlert(msg) { alert(msg); }
+
+  function runDeviceAction(deviceId, deviceName, action, extra) {
+    var payload = Object.assign({ deviceId: deviceId, action: action }, extra || {});
+    return fetch('/admin/devices/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if (data.error) {
+          showAlert('Failed: ' + data.error);
+          return;
+        }
+        showAlert(deviceName + ': ' + action + ' completed.');
+        if (action === 'retire' || action === 'wipe') location.reload();
+      })
+      .catch(function(){ showAlert('Request failed \\u2014 please try again.'); });
+  }
+
+  document.addEventListener('click', function(e){
+    var syncBtn = e.target.closest('.device-sync-btn');
+    if (syncBtn) {
+      var dn = syncBtn.getAttribute('data-devicename');
+      if (confirm('Trigger an Intune check-in sync for ' + dn + '?')) {
+        runDeviceAction(syncBtn.getAttribute('data-deviceid'), dn, 'sync');
+      }
+      return;
+    }
+
+    var retireBtn = e.target.closest('.device-retire-btn');
+    if (retireBtn) {
+      var rn = retireBtn.getAttribute('data-devicename');
+      if (confirm('Retire ' + rn + '? This removes company data and management from the device. This cannot be undone.')) {
+        runDeviceAction(retireBtn.getAttribute('data-deviceid'), rn, 'retire');
+      }
+      return;
+    }
+
+    var wipeBtn = e.target.closest('.device-wipe-btn');
+    if (wipeBtn) {
+      var wn = wipeBtn.getAttribute('data-devicename');
+      var typed = prompt('This will FACTORY RESET "' + wn + '" and erase all data on it. This cannot be undone.\\n\\nType the device name exactly to confirm:');
+      if (typed === null) return;
+      if (typed !== wn) {
+        showAlert('Device name did not match \\u2014 wipe cancelled.');
+        return;
+      }
+      runDeviceAction(wipeBtn.getAttribute('data-deviceid'), wn, 'wipe', { confirmName: typed });
+    }
+  });
+})();
+</script>`;
   return shell('Devices', body, 'admin');
+});
+
+// Sync / retire / wipe a single Intune device. Wipe requires the caller
+// to re-send the device's exact name as confirmName - re-verified against
+// Graph server-side (not just trusted from the client prompt) before the
+// wipe call is made, since this is the single most destructive action
+// exposed anywhere in this panel.
+app.post('/admin/devices/action', async (c) => {
+  const session = await getSession(c);
+  if (!session || !isPortalAdmin(session)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  let payload;
+  try {
+    payload = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+
+  const deviceId = payload.deviceId;
+  const action = payload.action;
+  if (!deviceId || !['sync', 'retire', 'wipe'].includes(action)) {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+
+  if (action === 'wipe') {
+    const confirmName = typeof payload.confirmName === 'string' ? payload.confirmName : '';
+    const deviceRes = await graphFetch(c, session, `/deviceManagement/managedDevices/${encodeURIComponent(deviceId)}?$select=deviceName`);
+    if (!deviceRes.ok || !deviceRes.body) {
+      console.error('Device lookup before wipe failed:', deviceRes.status, JSON.stringify(deviceRes.body));
+      return c.json({ error: 'Could not verify device before wiping.' }, 502);
+    }
+    if (deviceRes.body.deviceName !== confirmName) {
+      return c.json({ error: 'Device name confirmation did not match.' }, 400);
+    }
+  }
+
+  const endpointByAction = {
+    sync: `/deviceManagement/managedDevices/${encodeURIComponent(deviceId)}/syncDevice`,
+    retire: `/deviceManagement/managedDevices/${encodeURIComponent(deviceId)}/retire`,
+    wipe: `/deviceManagement/managedDevices/${encodeURIComponent(deviceId)}/wipe`,
+  };
+
+  const r = await graphFetch(c, session, endpointByAction[action], {
+    method: 'POST',
+    body: action === 'wipe' ? JSON.stringify({}) : undefined,
+  });
+
+  if (!r.ok) {
+    console.error(`Graph device ${action} failed:`, r.status, JSON.stringify(r.body));
+    return c.json({ error: `Graph returned status ${r.status}` }, 502);
+  }
+
+  return c.json({ ok: true });
 });
 
 // ============================================================
