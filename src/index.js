@@ -2486,6 +2486,159 @@ app.post('/admin/groups/email/send', async (c) => {
 });
 
 // ============================================================
+// ROUTES - ADMIN / AUDIT LOG
+// Tenant-wide directory audit feed - every directory change, not just
+// ones made through this panel. Requires AuditLog.Read.All (see
+// GRAPH_SCOPES). No $orderby is used - directoryAudits already returns
+// most-recent-first by default, and adding $orderby risks the same
+// "advanced query" 400 seen earlier on /users with $filter+$orderby.
+// ============================================================
+app.get('/admin/audit', async (c) => {
+  const session = await getSession(c);
+  const gate = adminGate(c, session, 'Audit Log');
+  if (gate) return gate;
+
+  const r = await graphFetch(c, session, `/auditLogs/directoryAudits?$top=50`);
+
+  let entries = [];
+  let loadFailed = false;
+  if (r.ok && r.body) {
+    entries = r.body.value || [];
+  } else {
+    loadFailed = true;
+    console.error('Graph audit log fetch failed:', r.status, JSON.stringify(r.body));
+  }
+
+  const initiatorLabel = (e) => {
+    if (e.initiatedBy && e.initiatedBy.user) {
+      return e.initiatedBy.user.userPrincipalName || e.initiatedBy.user.displayName || 'Unknown user';
+    }
+    if (e.initiatedBy && e.initiatedBy.app) {
+      return (e.initiatedBy.app.displayName || 'App') + ' (app)';
+    }
+    return 'Unknown';
+  };
+
+  const targetLabel = (e) => {
+    const t = Array.isArray(e.targetResources) && e.targetResources.length ? e.targetResources[0] : null;
+    if (!t) return '&mdash;';
+    return t.userPrincipalName || t.displayName || t.type || '&mdash;';
+  };
+
+  const auditRows = entries.map((e) => `
+<tr>
+  <td>${fmtDate(e.activityDateTime)}</td>
+  <td>${escapeHtml(e.activityDisplayName || '&mdash;')}</td>
+  <td>${escapeHtml(initiatorLabel(e))}</td>
+  <td>${escapeHtml(targetLabel(e))}</td>
+  <td><span class="result-pill ${e.result === 'success' ? 'success' : 'failure'}">${escapeHtml(e.result || 'unknown')}</span></td>
+</tr>`).join('');
+
+  const body = `
+<div class="page-section top">
+<div class="user-bar">
+<div class="user-bar-info">
+<div class="user-avatar">&#x1F464;</div>
+<div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
+</div>
+</div>
+<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
+</div>
+
+<div class="section-header">
+<div class="section-label">Authorised Portal &middot; Microsoft Graph</div>
+<h2 class="section-title">Audit Log</h2>
+<p class="section-sub">The 50 most recent directory changes across the tenant &mdash; not limited to actions taken through this panel.</p>
+</div>
+
+${adminTabs('audit')}
+
+${loadFailed ? `<p class="no-results">Couldn't load the audit log &mdash; you may be missing the AuditLog.Read.All permission. Check the Worker logs for the full Graph error.</p>` : ''}
+${!loadFailed && entries.length === 0 ? `<p class="no-results">No recent audit entries found.</p>` : ''}
+
+${entries.length > 0 ? `
+<div class="audit-table-wrap">
+<table class="audit-table">
+<thead><tr><th>Time</th><th>Activity</th><th>Initiated by</th><th>Target</th><th>Result</th></tr></thead>
+<tbody>${auditRows}</tbody>
+</table>
+</div>` : ''}
+
+<div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
+</div>`;
+  return shell('Audit Log', body, 'admin');
+});
+
+// ============================================================
+// ROUTES - ADMIN / LICENSES
+// Tenant-wide license/SKU overview: assigned vs. available seats.
+// Requires Organization.Read.All (see GRAPH_SCOPES).
+// ============================================================
+app.get('/admin/licenses', async (c) => {
+  const session = await getSession(c);
+  const gate = adminGate(c, session, 'Licenses');
+  if (gate) return gate;
+
+  const r = await graphFetch(c, session, `/subscribedSkus?$select=skuPartNumber,consumedUnits,prepaidUnits`);
+
+  let skus = [];
+  let loadFailed = false;
+  if (r.ok && r.body) {
+    skus = (r.body.value || []).sort((a, b) => (a.skuPartNumber || '').localeCompare(b.skuPartNumber || ''));
+  } else {
+    loadFailed = true;
+    console.error('Graph subscribedSkus fetch failed:', r.status, JSON.stringify(r.body));
+  }
+
+  const licenseRows = skus.map((s) => {
+    const total = (s.prepaidUnits && s.prepaidUnits.enabled) || 0;
+    const used = s.consumedUnits || 0;
+    const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+    const highUsage = total > 0 && used >= total;
+    return `
+<div class="license-row">
+  <div class="license-row-top">
+    <span class="license-row-name">${escapeHtml(s.skuPartNumber || 'Unknown SKU')}</span>
+    <span class="license-row-count">${used} / ${total} assigned</span>
+  </div>
+  <div class="license-bar-track"><div class="license-bar-fill${highUsage ? ' high' : ''}" style="width:${pct}%"></div></div>
+</div>`;
+  }).join('');
+
+  const body = `
+<div class="page-section top">
+<div class="user-bar">
+<div class="user-bar-info">
+<div class="user-avatar">&#x1F464;</div>
+<div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
+</div>
+</div>
+<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
+</div>
+
+<div class="section-header">
+<div class="section-label">Authorised Portal &middot; Microsoft Graph</div>
+<h2 class="section-title">Licenses</h2>
+<p class="section-sub">Assigned vs. available seats for every subscribed SKU in the tenant.</p>
+</div>
+
+${adminTabs('licenses')}
+
+${loadFailed ? `<p class="no-results">Couldn't load licenses &mdash; you may be missing the Organization.Read.All permission. Check the Worker logs for the full Graph error.</p>` : ''}
+${!loadFailed && skus.length === 0 ? `<p class="no-results">No subscribed licenses found.</p>` : ''}
+
+${licenseRows}
+
+<div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
+</div>`;
+  return shell('Licenses', body, 'admin');
+});
+
+// ============================================================
 // ROUTES - DASHBOARD (auth protected - same login flow as /admin)
 // Quick access to Microsoft 365 apps, plus an Admin Centre section at
 // the bottom linking to the Microsoft admin portals. Access to each
