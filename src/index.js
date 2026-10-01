@@ -2892,28 +2892,7 @@ app.get('/auth/logout', async (c) => {
   );
 });
 
-// ============================================================
-// ROUTES - ID CALLBACK
-// Kept live (not linked from nav or the home cards) - replace
-// placeholder content with real tools later
-// ============================================================
-app.get('/idcallback', (c) => {
-  const body = `
-<div class="page-section top">
-<div class="section-header">
-<div class="section-label">Identity Services</div>
-<h2 class="section-title">ID Callback</h2>
-<p class="section-sub">TMTCo identity callback services. Contact admin if you need access or assistance.</p>
-</div>
-<div class="placeholder-box">
-<div class="big-icon">&#x1F194;</div>
-<h3>Coming Soon</h3>
-<p>This page is being set up. In the meantime reach out to <a href="mailto:logan.admin@directory.themrtechguy.com">logan.admin@directory.themrtechguy.com</a> for identity callback assistance.</p>
-</div>
-<div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
-</div>`;
-  return shell('ID Callback', body, 'idcallback');
-});
+
 
 // ============================================================
 // ROUTES - SERVICES
