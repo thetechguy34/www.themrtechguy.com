@@ -3130,6 +3130,12 @@ app.get('/contact', (c) => {
 <strong>tmtcoau.com</strong>
 </div>
 </div>
+<div class="contact-item">
+div class"contact-item-icon">#x1F4DE;</div>
+<div>
+<span>Whatsapp Contact</span>
+<strong>0493 978 840</strong>
+
 <!-- Add more contact items here -->
 </div>
 <div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
