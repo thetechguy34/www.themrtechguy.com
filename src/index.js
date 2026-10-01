@@ -3110,7 +3110,7 @@ app.get('/contact', (c) => {
 </div>
 </div>
 <div class="contact-item">
-<div class="contact-item-icon">#x1F4DE;</div>
+<div class="contact-item-icon">&#x1F4DE;</div>
 <div>
 <span>Whatsapp Contact</span>
 <strong>0493 978 840</strong>
