@@ -366,6 +366,16 @@ font-family:var(--body);font-size:.9rem}
 .device-actions-cell{display:flex;gap:.4rem;flex-wrap:wrap}
 .device-actions-cell .btn{padding:.35rem .7rem;font-size:.75rem}
 
+/* VERIFIED ID */
+.vc-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+padding:2.2rem;max-width:420px;margin:0 auto;text-align:center}
+.vc-qr-wrap{background:#fff;border-radius:10px;padding:1rem;display:inline-flex;
+align-items:center;justify-content:center;min-height:216px;min-width:216px;margin:1.2rem 0}
+.vc-status{font-size:.88rem;color:var(--muted);margin-top:1rem}
+.vc-status.ok{color:#4ade80;font-weight:500}
+.vc-status.err{color:#f87171;font-weight:500}
+.vc-deeplink{margin-top:.8rem}
+
 /* ID CALLBACK / SERVICES PLACEHOLDER */
 .placeholder-box{background:var(--surface);border:1px solid var(--border);
 border-radius:var(--radius);padding:3rem 2rem;text-align:center;max-width:560px;margin:0 auto}
@@ -697,6 +707,55 @@ async function graphFetch(c, session, path, options = {}) {
 function generateTempPassword() {
   const raw = crypto.randomUUID().replace(/-/g, '').slice(0, 14);
   return `${raw}Aa1!`;
+}
+
+// ============================================================
+// VERIFIED ID (Microsoft Entra Verified ID issuance)
+// ------------------------------------------------------------
+// This is a SEPARATE API from Microsoft Graph, and uses APP-ONLY auth
+// (client credentials grant), not the delegated user token the rest of
+// this file uses. It needs its own Application permission consented on
+// the app registration: "VerifiableCredential.Create.All" against the
+// "Verifiable Credentials Service Request" API (added via API
+// permissions -> Add a permission -> APIs my organization uses).
+//
+// authority/manifest/type are read from env vars (VC_AUTHORITY,
+// VC_MANIFEST, VC_TYPE in wrangler.jsonc "vars" - not secrets, just
+// config) rather than hardcoded, since the credential definition is
+// still being iterated on. The values below are fallback defaults from
+// the original "VerifiedEmployee" first-party credential, used only if
+// the env vars aren't set. Once the new "VerifiedCredentialExpert"
+// custom credential is created in the Verified ID admin center, set
+// VC_MANIFEST to its generated manifest URL and VC_TYPE to
+// "VerifiedCredentialExpert" - no code change needed.
+const VC_AUTHORITY_DEFAULT =
+  'did:web:verifiedid.entra.microsoft.com:f1011f75-0d96-4d08-b8d4-6c79c851f9ba:f5674475-f43e-b35b-dcc6-5d3c3efe6441';
+const VC_MANIFEST_DEFAULT =
+  'https://verifiedid.did.msidentity.com/v1.0/tenants/f1011f75-0d96-4d08-b8d4-6c79c851f9ba/verifiableCredentials/contracts/4b569048-2a51-8d41-8d64-a27249369c86/manifest';
+const VC_TYPE_DEFAULT = 'VerifiedEmployee';
+const VC_RESOURCE_SCOPE = '3db474b9-6a0c-4840-96ac-1fceb342124f/.default';
+
+// App-only token for the Verified ID Request Service - fetched fresh
+// each time rather than cached, since issuance requests are infrequent
+// and this keeps the logic simple (no isolate-lifetime caching concerns).
+async function getVerifiedIdAppToken(c) {
+  const { TENANT_ID, CLIENT_ID, CLIENT_SECRET } = c.env;
+  const res = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      grant_type: 'client_credentials',
+      scope: VC_RESOURCE_SCOPE,
+    }),
+  });
+  if (!res.ok) {
+    console.error('Verified ID app-only token request failed:', res.status, await res.text().catch(() => ''));
+    return null;
+  }
+  const data = await res.json();
+  return data.access_token || null;
 }
 
 // Shared Graph directory search used by both the no-JS page search and
@@ -2717,6 +2776,12 @@ app.get('/dashboard', async (c) => {
 <p>Browse the full Microsoft 365 app launcher.</p>
 <span class="card-link">Open Microsoft 365 &rarr;</span>
 </a>
+<a href="/verifiedid" class="card">
+<div class="card-icon">&#x1F6C2;</div>
+<h3>Verified ID</h3>
+<p>Get your TMTCo Verified Employee credential in Microsoft Authenticator.</p>
+<span class="card-link">Get my Verified ID &rarr;</span>
+</a>
 </div>
 
 <div class="admin-section">
@@ -2763,6 +2828,251 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 </div>
 </div>`;
   return shell('Sign In', body, 'dashboard');
+});
+
+// ============================================================
+// ROUTES - VERIFIED ID
+// Open to any signed-in user (same bar as /dashboard - no PortalAdmin
+// role required), since this issues a credential to yourself, not an
+// admin action on someone else's account.
+// ============================================================
+app.get('/verifiedid', async (c) => {
+  const session = await getSession(c);
+  const error = c.req.query('error');
+
+  if (!session) {
+    const body = `
+<div class="login-page">
+<div class="login-box">
+<div class="lock-icon">&#x1F510;</div>
+<h2>Sign In Required</h2>
+<p>Sign in with your TMTCo Microsoft account to get your Verified ID.</p>
+<a href="/auth/login?next=/dashboard" class="ms-login-btn">${MS_LOGO}Sign in with Microsoft</a>
+${error ? `<div class="error-box">Sign-in failed or access denied.</div>` : ''}
+<p class="login-note">&#x1F512; Secured via Microsoft Entra ID</p>
+</div>
+</div>`;
+    return shell('Sign In', body, 'dashboard');
+  }
+
+  const body = `
+<div class="page-section top">
+<div class="user-bar">
+<div class="user-bar-info">
+<div class="user-avatar">&#x1F464;</div>
+<div>
+<div class="user-name">${escapeHtml(session.name || session.email)}</div>
+<div class="user-email">${escapeHtml(session.email)}</div>
+</div>
+</div>
+<a href="/auth/logout" class="btn btn-ghost" style="font-size:.85rem;padding:.5rem 1rem;">Sign out</a>
+</div>
+
+<div class="section-header">
+<div class="section-label">TMTCo &middot; Microsoft Entra Verified ID</div>
+<h2 class="section-title">Get your Verified ID</h2>
+<p class="section-sub">Scan the QR code with Microsoft Authenticator to add your TMTCo Verified Employee credential.</p>
+</div>
+
+<div class="vc-box">
+<div id="vcIdle">
+<button type="button" class="btn btn-primary" id="vcStartBtn">Generate QR code</button>
+</div>
+<div id="vcLoading" style="display:none">
+<p class="vc-status">Generating your request&hellip;</p>
+</div>
+<div id="vcActive" style="display:none">
+<div class="vc-qr-wrap" id="vcQrWrap"></div>
+<p class="vc-status" id="vcStatusText">Scan with Microsoft Authenticator, or tap below on this device.</p>
+<a href="#" id="vcDeepLink" class="btn btn-ghost vc-deeplink">Open in Authenticator</a>
+</div>
+</div>
+
+<div class="back-row"><a href="/dashboard" class="btn btn-ghost">&larr; Back to Dashboard</a></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(function(){
+  var idleEl = document.getElementById('vcIdle');
+  var loadingEl = document.getElementById('vcLoading');
+  var activeEl = document.getElementById('vcActive');
+  var qrWrap = document.getElementById('vcQrWrap');
+  var statusText = document.getElementById('vcStatusText');
+  var deepLink = document.getElementById('vcDeepLink');
+  var startBtn = document.getElementById('vcStartBtn');
+  var pollTimer = null;
+  var pollDeadline = null;
+
+  function stopPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  function poll(state) {
+    pollDeadline = Date.now() + 2 * 60 * 1000; // 2 minute timeout
+    pollTimer = setInterval(function(){
+      if (Date.now() > pollDeadline) {
+        stopPolling();
+        statusText.textContent = 'This request has expired. Generate a new QR code to try again.';
+        statusText.className = 'vc-status err';
+        return;
+      }
+      fetch('/verifiedid/status?state=' + encodeURIComponent(state))
+        .then(function(res){ return res.json(); })
+        .then(function(data){
+          if (data.status === 'issuance_successful') {
+            stopPolling();
+            statusText.textContent = '\\u2705 Verified ID issued successfully! Check Microsoft Authenticator.';
+            statusText.className = 'vc-status ok';
+          } else if (data.status === 'issuance_error') {
+            stopPolling();
+            statusText.textContent = 'Issuance failed: ' + (data.errorMessage || 'please try again.');
+            statusText.className = 'vc-status err';
+          } else if (data.status === 'request_retrieved') {
+            statusText.textContent = 'QR code scanned \\u2014 finishing up in Authenticator\\u2026';
+            statusText.className = 'vc-status';
+          }
+        })
+        .catch(function(){ /* keep polling silently on transient network errors */ });
+    }, 3000);
+  }
+
+  startBtn.addEventListener('click', function(){
+    idleEl.style.display = 'none';
+    loadingEl.style.display = 'block';
+
+    fetch('/verifiedid/start', { method: 'POST' })
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        loadingEl.style.display = 'none';
+        if (data.error) {
+          idleEl.style.display = 'block';
+          alert('Could not start the request: ' + data.error);
+          return;
+        }
+        activeEl.style.display = 'block';
+        qrWrap.innerHTML = '';
+        new QRCode(qrWrap, { text: data.url, width: 200, height: 200 });
+        deepLink.href = data.url;
+        poll(data.state);
+      })
+      .catch(function(){
+        loadingEl.style.display = 'none';
+        idleEl.style.display = 'block';
+        alert('Request failed \\u2014 please try again.');
+      });
+  });
+})();
+</script>`;
+  return shell('Verified ID', body, 'dashboard');
+});
+
+// Creates a Verified ID issuance request via Microsoft's app-only API
+// and returns the QR payload URL + a correlation "state" to the
+// frontend. The state is also stored in KV so the callback endpoint
+// below can record status updates against it, and so the frontend can
+// poll for them.
+app.post('/verifiedid/start', async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: 'unauthorized' }, 401);
+
+  const token = await getVerifiedIdAppToken(c);
+  if (!token) return c.json({ error: 'Could not authenticate to the Verified ID service.' }, 502);
+
+  const baseUrl = getBaseUrl(c);
+  const state = crypto.randomUUID();
+
+  // First-party "VerifiedEmployee" credential - Microsoft populates the
+  // claims itself during the Authenticator flow (tied to the signed-in
+  // user verifying against the tenant's own Verified ID authority), so
+  // no "claims" object is needed here, unlike a custom idTokenHint-based
+  // credential would require.
+  const requestBody = {
+    callback: {
+      url: `${baseUrl}/verifiedid/callback`,
+      state,
+      headers: { 'api-key': c.env.VC_CALLBACK_KEY },
+    },
+    authority: c.env.VC_AUTHORITY || VC_AUTHORITY_DEFAULT,
+    registration: { clientName: 'TMTCo Admin Portal' },
+    type: c.env.VC_TYPE || VC_TYPE_DEFAULT,
+    manifest: c.env.VC_MANIFEST || VC_MANIFEST_DEFAULT,
+  };
+
+  const res = await fetch('https://verifiedid.did.msidentity.com/v1.0/verifiableCredentials/createIssuanceRequest', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
+
+  const resBody = await res.json().catch(() => null);
+  if (!res.ok) {
+    console.error('Verified ID createIssuanceRequest failed:', res.status, JSON.stringify(resBody));
+    return c.json({ error: `Verified ID service returned status ${res.status}` }, 502);
+  }
+
+  // Record this request so the callback (below) and status poll have
+  // something to update/read. Short TTL matching the QR code's own
+  // ~a few minute expiry window.
+  await c.env.SESSIONS.put(`vc:${state}`, JSON.stringify({ status: 'pending', createdAt: Date.now() }), {
+    expirationTtl: 600,
+  });
+
+  return c.json({ url: resBody.url, state });
+});
+
+// Public callback Microsoft calls as the user progresses through the
+// Authenticator flow (QR scanned, issuance succeeded/failed). This
+// endpoint has NO session cookie available - it's authenticated purely
+// by the shared api-key header, which must match the secret we sent
+// when creating the request. We only ever UPDATE an existing KV key
+// here, never create a new one from unauthenticated input, to avoid an
+// internet-facing endpoint being used to write arbitrary KV data.
+app.post('/verifiedid/callback', async (c) => {
+  const apiKey = c.req.header('api-key');
+  if (!apiKey || apiKey !== c.env.VC_CALLBACK_KEY) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const payload = await c.req.json().catch(() => null);
+  if (!payload || !payload.state) {
+    return c.json({ error: 'invalid_payload' }, 400);
+  }
+
+  const key = `vc:${payload.state}`;
+  const existing = await c.env.SESSIONS.get(key);
+  if (!existing) {
+    // Unknown/expired state - nothing to update, but still ack so
+    // Microsoft doesn't retry indefinitely.
+    return c.json({ ok: true });
+  }
+
+  const record = {
+    status: payload.requestStatus || 'unknown',
+    errorMessage: payload.error && payload.error.message ? payload.error.message : null,
+    updatedAt: Date.now(),
+  };
+  await c.env.SESSIONS.put(key, JSON.stringify(record), { expirationTtl: 600 });
+
+  return c.json({ ok: true });
+});
+
+// Frontend polls this to find out whether the QR code has been scanned
+// and whether issuance succeeded, since Microsoft reports progress to
+// our server (the callback above), not directly to the user's browser.
+app.get('/verifiedid/status', async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: 'unauthorized' }, 401);
+
+  const state = c.req.query('state') || '';
+  if (!state) return c.json({ error: 'missing_state' }, 400);
+
+  const raw = await c.env.SESSIONS.get(`vc:${state}`);
+  if (!raw) return c.json({ status: 'pending' });
+
+  const record = JSON.parse(raw);
+  return c.json({ status: record.status, errorMessage: record.errorMessage || null });
 });
 
 // ============================================================
@@ -2892,7 +3202,28 @@ app.get('/auth/logout', async (c) => {
   );
 });
 
-
+// ============================================================
+// ROUTES - ID CALLBACK
+// Kept live (not linked from nav or the home cards) - replace
+// placeholder content with real tools later
+// ============================================================
+app.get('/idcallback', (c) => {
+  const body = `
+<div class="page-section top">
+<div class="section-header">
+<div class="section-label">Identity Services</div>
+<h2 class="section-title">ID Callback</h2>
+<p class="section-sub">TMTCo identity callback services. Contact admin if you need access or assistance.</p>
+</div>
+<div class="placeholder-box">
+<div class="big-icon">&#x1F194;</div>
+<h3>Coming Soon</h3>
+<p>This page is being set up. In the meantime reach out to <a href="mailto:logan.admin@directory.themrtechguy.com">logan.admin@directory.themrtechguy.com</a> for identity callback assistance.</p>
+</div>
+<div class="back-row"><a href="/" class="btn btn-ghost">&larr; Back to Home</a></div>
+</div>`;
+  return shell('ID Callback', body, 'idcallback');
+});
 
 // ============================================================
 // ROUTES - SERVICES
@@ -3107,13 +3438,6 @@ app.get('/contact', (c) => {
 <div>
 <span>Website</span>
 <strong>tmtcoau.com</strong>
-</div>
-</div>
-<div class="contact-item">
-<div class="contact-item-icon">&#x1F4DE;</div>
-<div>
-<span>Whatsapp Contact</span>
-<strong>0493 978 840</strong>
 </div>
 </div>
 <!-- Add more contact items here -->
