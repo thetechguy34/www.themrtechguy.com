@@ -18,7 +18,8 @@
     "VC_AUTHORITY": "did:web:verifiedid.entra.microsoft.com:f1011f75-0d96-4d08-b8d4-6c79c851f9ba:f5674475-f43e-b35b-dcc6-5d3c3efe6441",
     "VC_ISSUER": "did:web:verifiedid.entra.microsoft.com:f1011f75-0d96-4d08-b8d4-6c79c851f9ba:f5674475-f43e-b35b-dcc6-5d3c3efe6441",
     "VC_MANIFEST": "https://verifiedid.did.msidentity.com/v1.0/tenants/f1011f75-0d96-4d08-b8d4-6c79c851f9ba/verifiableCredentials/contracts/4b569048-2a51-8d41-8d64-a27249369c86/manifest",
-    "VC_TYPE": "VerifiedEmployee"
+    "VC_TYPE": "VerifiedEmployee",
+    "VC_LOGIN_MODE": "chain_oauth"
   },
 
   "observability": {

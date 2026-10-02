@@ -696,8 +696,117 @@ async function getValidAccessToken(c, session) {
 // will still separately enforce the signed-in admin's real directory
 // role (User Administrator etc.) on every write call below - this check
 // is just what decides whether the UI is shown at all.
+//
+// Gate is based on holding the Global Administrator directory role,
+// checked once at sign-in via Graph and cached on the session (see
+// GLOBAL_ADMIN_ROLE_TEMPLATE_ID / checkIsGlobalAdmin below). This
+// replaces the earlier PortalAdmin app-role check - the app role can be
+// left in place in Entra ID (harmless if unused) or removed, since
+// nothing in this code reads it anymore.
+//
+// Trade-off worth knowing: tying portal access to Global Admin means
+// every Global Admin automatically gets in, and there's no way to grant
+// someone narrower "portal only" access without making them a Global
+// Admin too - the previous app-role model allowed that separation.
+//
+// Known gap: sessions created via the Verified ID sign-in flow (see
+// auth_method: 'verified_id') carry no Graph access token at all, so
+// there is no way to check their directory roles - those sessions are
+// deliberately given isGlobalAdmin: false at creation and can never
+// pass this gate as written. See that createSession call for the
+// reasoning; extending VC-based logins to also qualify would need a
+// separate app-only Graph lookup, not built here.
 function isPortalAdmin(session) {
-  return Array.isArray(session.roles) && session.roles.includes('PortalAdmin');
+  return session.isGlobalAdmin === true;
+}
+
+// Fixed, tenant-independent template ID for the Global Administrator
+// directory role - safe to check against directly rather than matching
+// on displayName, which could in principle be renamed/localized.
+const GLOBAL_ADMIN_ROLE_TEMPLATE_ID = '62e90394-69f5-4237-9190-012177145e10';
+
+// Checks whether the user who owns this delegated access token holds
+// the Global Administrator directory role, via their own memberOf list.
+// Uses Directory.Read.All (already in GRAPH_SCOPES) - no new permission
+// needed. Only checks direct/active role assignment (not PIM-eligible,
+// not-yet-activated assignments) - matching the "must be actually active
+// right now" behavior this project settled on earlier.
+async function checkIsGlobalAdmin(accessToken) {
+  try {
+    const res = await fetch(
+      'https://graph.microsoft.com/v1.0/me/memberOf?$select=displayName,roleTemplateId',
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!res.ok) {
+      console.error('Global Admin role check failed:', res.status, await res.text().catch(() => ''));
+      return false;
+    }
+    const data = await res.json();
+    const roles = Array.isArray(data.value) ? data.value : [];
+    return roles.some((r) => r.roleTemplateId === GLOBAL_ADMIN_ROLE_TEMPLATE_ID);
+  } catch (e) {
+    console.error('Global Admin role check threw:', e);
+    return false;
+  }
+}
+
+// ---- Scenario C: app-only Global Admin lookup for Verified ID logins ----
+// A VC-only sign-in has no delegated token for that person, so instead
+// the SERVER's own app identity (client credentials) looks up that
+// specific user's roles by the email already present in their verified
+// credential. Needs Directory.Read.All as an APPLICATION permission -
+// a separate consent from the Delegated Directory.Read.All already used
+// elsewhere in this file, even though it's the same permission name.
+async function getGraphAppOnlyToken(c) {
+  const { TENANT_ID, CLIENT_ID, CLIENT_SECRET } = c.env;
+  try {
+    const res = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        grant_type: 'client_credentials',
+        scope: 'https://graph.microsoft.com/.default',
+      }),
+    });
+    if (!res.ok) {
+      console.error('Graph app-only token request failed:', res.status, await res.text().catch(() => ''));
+      return null;
+    }
+    const data = await res.json();
+    return data.access_token || null;
+  } catch (e) {
+    console.error('Graph app-only token request threw:', e);
+    return null;
+  }
+}
+
+async function checkIsGlobalAdminByEmailAppOnly(c, email) {
+  if (!email) return false;
+  const token = await getGraphAppOnlyToken(c);
+  if (!token) return false;
+  try {
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(email)}/memberOf?$select=roleTemplateId`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) {
+      // Not fatal - this just means the VC session falls back to
+      // isGlobalAdmin: false, same as if this lookup were never
+      // attempted. Commonly a 404 if the verified email doesn't match
+      // an actual directory user, or a 403 if the Application
+      // permission hasn't been consented yet.
+      console.error('App-only Global Admin lookup failed:', res.status, await res.text().catch(() => ''));
+      return false;
+    }
+    const data = await res.json();
+    const roles = Array.isArray(data.value) ? data.value : [];
+    return roles.some((r) => r.roleTemplateId === GLOBAL_ADMIN_ROLE_TEMPLATE_ID);
+  } catch (e) {
+    console.error('App-only Global Admin lookup threw:', e);
+    return false;
+  }
 }
 
 function getVerifiedIdIdentity(c, verifiedCredentialsData) {
@@ -3315,11 +3424,45 @@ app.get('/auth/verifiedid/complete', async (c) => {
     return c.json({ error: 'The presented credential was not an accepted TMTCo Verified ID credential.' }, 403);
   }
 
+  const next = record.next || '/dashboard';
+
+  // VC_LOGIN_MODE controls which of two approaches handles Global Admin
+  // access for Verified ID sign-ins - see isPortalAdmin's comment and
+  // the two helper blocks above for the full trade-off explanation:
+  //
+  // "chain_oauth" (Scenario B): don't create a session from the VC
+  // claims at all - hand off to a real Microsoft sign-in instead (with
+  // login_hint pre-filled from the verified email), which yields a
+  // genuine delegated token and the normal, fully-accurate Global Admin
+  // check. Costs an extra interactive sign-in step unless the browser
+  // already has an active Microsoft session.
+  //
+  // Anything else (default, Scenario C): create the session directly
+  // from the VC claims as before, but now also attempt an app-only
+  // Graph lookup (by the verified email) to populate isGlobalAdmin
+  // instead of hardcoding it false. One-step UX preserved; needs
+  // Directory.Read.All as an Application permission consented
+  // separately from the Delegated version already in use.
+  if (c.env.VC_LOGIN_MODE === 'chain_oauth') {
+    await c.env.SESSIONS.delete(key);
+    deleteCookie(c, 'vc_login_state', { path: '/' });
+    const redirectTarget = `/auth/login?next=${encodeURIComponent(next)}&login_hint=${encodeURIComponent(identity.email)}`;
+    // Plain text, not an HTTP redirect - the frontend's fetch() would
+    // otherwise silently follow a server-side redirect toward
+    // Microsoft's cross-origin login page in the background instead of
+    // actually navigating the browser there. See the frontend poll
+    // handler a little above, which already knows how to read this.
+    return c.text(redirectTarget);
+  }
+
   const roles = [];
+  const isGlobalAdmin = await checkIsGlobalAdminByEmailAppOnly(c, identity.email);
+
   await createSession(c, {
     name: identity.name,
     email: identity.email,
     roles,
+    isGlobalAdmin,
     auth_method: 'verified_id',
     verified_id: {
       issuer: identity.issuer,
@@ -3334,7 +3477,7 @@ app.get('/auth/verifiedid/complete', async (c) => {
 
   await c.env.SESSIONS.delete(key);
   deleteCookie(c, 'vc_login_state', { path: '/' });
-  return c.text(record.next || '/dashboard');
+  return c.text(next);
 });
 
 // ============================================================
@@ -3360,6 +3503,14 @@ app.get('/auth/login', (c) => {
     scope: GRAPH_SCOPES,
     state,
   });
+
+  // Optional pre-fill for the Microsoft sign-in page - used by the
+  // Verified ID "chain_oauth" login mode (see /auth/verifiedid/complete)
+  // to skip the user having to retype their email after already proving
+  // their identity via credential. Harmless/no-op for the normal
+  // "Sign in with Microsoft" button, which never sends this param.
+  const loginHint = c.req.query('login_hint');
+  if (loginHint) params.set('login_hint', loginHint);
 
   setCookie(c, 'oauth_state', state, {
     httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: 300,
@@ -3438,10 +3589,17 @@ app.get('/auth/callback', async (c) => {
       console.error('Failed to decode ID token for roles claim:', e);
     }
 
+    // Checked once here, cached for the life of the session (same 20-min
+    // TTL as everything else) - a Global Admin role revoked mid-session
+    // won't immediately lock the portal, same staleness trade-off the
+    // app role claim had before it.
+    const isGlobalAdmin = await checkIsGlobalAdmin(tokens.access_token);
+
     await createSession(c, {
       name: user.displayName || user.givenName || '',
       email: user.mail || user.userPrincipalName || '',
       roles,
+      isGlobalAdmin,
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token || null,
       expires_at: Date.now() + ((tokens.expires_in || 3600) - 60) * 1000,
