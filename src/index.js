@@ -3236,7 +3236,23 @@ app.get('/auth/verifiedid', async (c) => {
   poll();
 })();
 </script>`;
-  return shell('Sign in with Verified ID', body, 'dashboard');
+  // BUG FIX: shell() builds and returns a brand-new Response object
+  // directly, completely independent of Hono's context (c). The
+  // setCookie(c, 'vc_login_state', ...) call above only attaches its
+  // Set-Cookie header onto c's own internally tracked response - it
+  // never reaches a separately-constructed Response like shell()
+  // returns. Every other cookie-setting route in this file returns via
+  // c.redirect(...), which DOES flow through c and picks the header up
+  // correctly; this route is the first to set a cookie and then return
+  // a shell() page instead, which is why only this one broke. Fix:
+  // manually copy whatever Set-Cookie header(s) Hono queued on c.res
+  // onto the actual Response we're about to return.
+  const vcLoginResponse = shell('Sign in with Verified ID', body, 'dashboard');
+  const queuedCookies = c.res.headers.getSetCookie
+    ? c.res.headers.getSetCookie()
+    : [c.res.headers.get('set-cookie')].filter(Boolean);
+  queuedCookies.forEach((cookieStr) => vcLoginResponse.headers.append('set-cookie', cookieStr));
+  return vcLoginResponse;
 });
 
 // Verified ID callback: authenticate the callback using the API key, then
