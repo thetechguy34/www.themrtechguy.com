@@ -188,6 +188,12 @@ font-family:var(--body);cursor:pointer;transition:all var(--transition);text-dec
 .ms-login-btn:hover{background:#f0f0f0;color:#1a1a1a;transform:translateY(-2px);
 box-shadow:0 8px 24px rgba(0,0,0,.3)}
 .ms-login-btn svg{width:20px;height:20px;flex-shrink:0}
+.vc-login-btn{display:flex;align-items:center;justify-content:center;gap:.75rem;width:100%;box-sizing:border-box;margin-top:.75rem;padding:.8rem 1rem;border:1px solid #d0d0d0;border-radius:8px;background:#fff;color:#1a1a1a;font-weight:600;text-decoration:none;cursor:pointer;transition:all .15s ease}
+.vc-login-btn:hover{background:#f0f0f0;transform:translateY(-2px)}
+.login-divider{display:flex;align-items:center;gap:.75rem;margin:.9rem 0;color:#777;font-size:.8rem}
+.login-divider::before,.login-divider::after{content:"";height:1px;background:#ddd;flex:1}
+.vc-login-icon{font-size:1.1rem}
+
 .login-note{margin-top:1.2rem;font-size:.78rem;color:var(--muted)}
 .error-box{margin-top:1rem;padding:.75rem 1rem;background:rgba(239,68,68,.1);
 border:1px solid rgba(239,68,68,.25);border-radius:8px;color:#f87171;font-size:.85rem}
@@ -607,6 +613,20 @@ function sanitizeNext(path) {
   return ALLOWED_NEXT_PATHS.includes(path) ? path : '/admin';
 }
 
+// Shared login options. Verified ID is a credential-presentation flow: the
+// browser stays on this site while the user approves the request in
+// Microsoft Authenticator, then the browser is resumed by polling the
+// short-lived transaction created by /auth/verifiedid.
+function verifiedIdLoginMarkup(next, label = 'Sign in with Verified ID') {
+  const safeNext = sanitizeNext(next);
+  return `
+<div class="login-divider"><span>or</span></div>
+<a href="/auth/verifiedid?next=${encodeURIComponent(safeNext)}" class="vc-login-btn">
+<span class="vc-login-icon">&#x1F4F1;</span>
+${escapeHtml(label)}
+</a>`;
+}
+
 // The Graph scopes the app requests. offline_access gets us a refresh
 // token so an admin's session can renew its Graph access token without
 // forcing a re-login every ~60-90 minutes. User.ReadWrite.All and
@@ -678,6 +698,36 @@ async function getValidAccessToken(c, session) {
 // is just what decides whether the UI is shown at all.
 function isPortalAdmin(session) {
   return Array.isArray(session.roles) && session.roles.includes('PortalAdmin');
+}
+
+function getVerifiedIdIdentity(c, verifiedCredentialsData) {
+  if (!Array.isArray(verifiedCredentialsData) || !verifiedCredentialsData.length) return null;
+
+  const expectedType = c.env.VC_TYPE || VC_TYPE_DEFAULT;
+  const expectedIssuer = c.env.VC_ISSUER || c.env.VC_AUTHORITY || VC_AUTHORITY_DEFAULT;
+  const expectedClaim = c.env.VC_LOGIN_CLAIM || 'mail';
+
+  const credential = verifiedCredentialsData.find(vc => {
+    const types = Array.isArray(vc.type) ? vc.type : [];
+    const issuerOk = !expectedIssuer || vc.issuer === expectedIssuer;
+    const typeOk = types.includes(expectedType);
+    const revocationOk = !vc.credentialState || vc.credentialState.revocationStatus === 'VALID';
+    return issuerOk && typeOk && revocationOk;
+  });
+  if (!credential) return null;
+
+  const claims = credential.claims && typeof credential.claims === 'object' ? credential.claims : {};
+  const claimValue = claims[expectedClaim] || claims.mail || claims.revocationId;
+  if (!claimValue) return null;
+
+  const email = String(claimValue).trim();
+  return {
+    email,
+    name: claims.displayName || [claims.givenName, claims.surname].filter(Boolean).join(' ') || email,
+    claims,
+    issuer: credential.issuer,
+    type: expectedType,
+  };
 }
 
 // Thin wrapper around a Graph v1.0 call using this session's (possibly
@@ -902,6 +952,7 @@ app.get('/admin', async (c) => {
 ${MS_LOGO}
 Sign in with Microsoft
 </a>
+${verifiedIdLoginMarkup('/admin')}
 ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan.admin@directory.themrtechguy.com for help.</div>` : ''}
 <p class="login-note">&#x1F512; Secured via Microsoft Entra ID &middot; TMTCo internal use only</p>
 </div>
@@ -927,6 +978,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 <div class="big-icon">&#x26D4;</div>
 <h3>Not Authorised</h3>
 <p>Your account is signed in but doesn't hold the admin role required for this panel. Contact <a href="mailto:logan.admin@directory.themrtechguy.com">logan.admin@directory.themrtechguy.com</a> if you believe this is a mistake.</p>
+${session && session.auth_method === 'verified_id' ? '<p>Verified ID proves your verified employee identity, but this admin panel also requires the Microsoft sign-in session because its actions use your delegated Microsoft Graph permissions.</p>' : ''}
 </div>
 </div>`;
     return shell('Admin Panel', body, 'admin');
@@ -1897,6 +1949,7 @@ function adminGate(c, session, pageTitle) {
 <h2>Authorised Access Only</h2>
 <p>This portal is restricted to TMTCo administrators.<br>Sign in with your organisational account to continue.</p>
 <a href="/auth/login?next=/admin" class="ms-login-btn">${MS_LOGO}Sign in with Microsoft</a>
+${verifiedIdLoginMarkup('/admin')}
 ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan.admin@directory.themrtechguy.com for help.</div>` : ''}
 <p class="login-note">&#x1F512; Secured via Microsoft Entra ID &middot; TMTCo internal use only</p>
 </div>
@@ -1910,6 +1963,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 <div class="big-icon">&#x26D4;</div>
 <h3>Not Authorised</h3>
 <p>Your account is signed in but doesn't hold the admin role required for this panel.</p>
+${session && session.auth_method === 'verified_id' ? '<p>Verified ID proves your verified employee identity, but this admin panel also requires the Microsoft sign-in session because its actions use your delegated Microsoft Graph permissions.</p>' : ''}
 </div>
 </div>`;
     return shell(pageTitle, body, 'admin');
@@ -2121,6 +2175,7 @@ app.get('/admin/devices', async (c) => {
 <h2>Authorised Access Only</h2>
 <p>This portal is restricted to TMTCo administrators.<br>Sign in with your organisational account to continue.</p>
 <a href="/auth/login?next=/admin" class="ms-login-btn">${MS_LOGO}Sign in with Microsoft</a>
+${verifiedIdLoginMarkup('/admin')}
 ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan.admin@directory.themrtechguy.com for help.</div>` : ''}
 <p class="login-note">&#x1F512; Secured via Microsoft Entra ID &middot; TMTCo internal use only</p>
 </div>
@@ -2135,6 +2190,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 <div class="big-icon">&#x26D4;</div>
 <h3>Not Authorised</h3>
 <p>Your account is signed in but doesn't hold the admin role required for this panel.</p>
+${session && session.auth_method === 'verified_id' ? '<p>Verified ID proves your verified employee identity, but this admin panel also requires the Microsoft sign-in session because its actions use your delegated Microsoft Graph permissions.</p>' : ''}
 </div>
 </div>`;
     return shell('Devices', body, 'admin');
@@ -2356,6 +2412,7 @@ app.get('/admin/groups', async (c) => {
 <h2>Authorised Access Only</h2>
 <p>This portal is restricted to TMTCo administrators.<br>Sign in with your organisational account to continue.</p>
 <a href="/auth/login?next=/admin" class="ms-login-btn">${MS_LOGO}Sign in with Microsoft</a>
+${verifiedIdLoginMarkup('/admin')}
 ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan.admin@directory.themrtechguy.com for help.</div>` : ''}
 <p class="login-note">&#x1F512; Secured via Microsoft Entra ID &middot; TMTCo internal use only</p>
 </div>
@@ -2370,6 +2427,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 <div class="big-icon">&#x26D4;</div>
 <h3>Not Authorised</h3>
 <p>Your account is signed in but doesn't hold the admin role required for this panel.</p>
+${session && session.auth_method === 'verified_id' ? '<p>Verified ID proves your verified employee identity, but this admin panel also requires the Microsoft sign-in session because its actions use your delegated Microsoft Graph permissions.</p>' : ''}
 </div>
 </div>`;
     return shell('Groups', body, 'admin');
@@ -2823,6 +2881,7 @@ app.get('/dashboard', async (c) => {
 ${MS_LOGO}
 Sign in with Microsoft
 </a>
+${verifiedIdLoginMarkup('/dashboard')}
 ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan.admin@directory.themrtechguy.com for help.</div>` : ''}
 <p class="login-note">&#x1F512; Secured via Microsoft Entra ID &middot; TMTCo internal use only</p>
 </div>
@@ -2832,9 +2891,16 @@ ${error ? `<div class="error-box">Sign-in failed or access denied. Contact logan
 
 // ============================================================
 // ROUTES - VERIFIED ID
-// Open to any signed-in user (same bar as /dashboard - no PortalAdmin
-// role required), since this issues a credential to yourself, not an
-// admin action on someone else's account.
+// ------------------------------------------------------------
+// There are two distinct Verified ID flows:
+//   1) /verifiedid/* - existing issuance flow for a signed-in user.
+//   2) /auth/verifiedid/* - presentation flow used as an alternative
+//      website login method.
+//
+// The login flow never trusts a callback by itself. The callback only
+// records the verified result against a short-lived transaction. The
+// browser must present the same transaction state from its login cookie
+// to /auth/verifiedid/complete before a normal TMTCo session is created.
 // ============================================================
 app.get('/verifiedid', async (c) => {
   const session = await getSession(c);
@@ -2848,6 +2914,7 @@ app.get('/verifiedid', async (c) => {
 <h2>Sign In Required</h2>
 <p>Sign in with your TMTCo Microsoft account to get your Verified ID.</p>
 <a href="/auth/login?next=/dashboard" class="ms-login-btn">${MS_LOGO}Sign in with Microsoft</a>
+${verifiedIdLoginMarkup('/dashboard')}
 ${error ? `<div class="error-box">Sign-in failed or access denied.</div>` : ''}
 <p class="login-note">&#x1F512; Secured via Microsoft Entra ID</p>
 </div>
@@ -2910,7 +2977,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied.</div>` : ''}
   }
 
   function poll(state) {
-    pollDeadline = Date.now() + 2 * 60 * 1000; // 2 minute timeout
+    pollDeadline = Date.now() + 2 * 60 * 1000;
     pollTimer = setInterval(function(){
       if (Date.now() > pollDeadline) {
         stopPolling();
@@ -2923,18 +2990,18 @@ ${error ? `<div class="error-box">Sign-in failed or access denied.</div>` : ''}
         .then(function(data){
           if (data.status === 'issuance_successful') {
             stopPolling();
-            statusText.textContent = '\\u2705 Verified ID issued successfully! Check Microsoft Authenticator.';
+            statusText.textContent = '\u2705 Verified ID issued successfully! Check Microsoft Authenticator.';
             statusText.className = 'vc-status ok';
           } else if (data.status === 'issuance_error') {
             stopPolling();
             statusText.textContent = 'Issuance failed: ' + (data.errorMessage || 'please try again.');
             statusText.className = 'vc-status err';
           } else if (data.status === 'request_retrieved') {
-            statusText.textContent = 'QR code scanned \\u2014 finishing up in Authenticator\\u2026';
+            statusText.textContent = 'QR code scanned \u2014 finishing up in Authenticator\u2026';
             statusText.className = 'vc-status';
           }
         })
-        .catch(function(){ /* keep polling silently on transient network errors */ });
+        .catch(function(){ });
     }, 3000);
   }
 
@@ -2960,7 +3027,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied.</div>` : ''}
       .catch(function(){
         loadingEl.style.display = 'none';
         idleEl.style.display = 'block';
-        alert('Request failed \\u2014 please try again.');
+        alert('Request failed \u2014 please try again.');
       });
   });
 })();
@@ -2968,11 +3035,7 @@ ${error ? `<div class="error-box">Sign-in failed or access denied.</div>` : ''}
   return shell('Verified ID', body, 'dashboard');
 });
 
-// Creates a Verified ID issuance request via Microsoft's app-only API
-// and returns the QR payload URL + a correlation "state" to the
-// frontend. The state is also stored in KV so the callback endpoint
-// below can record status updates against it, and so the frontend can
-// poll for them.
+// Creates a Verified ID issuance request via Microsoft's app-only API.
 app.post('/verifiedid/start', async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: 'unauthorized' }, 401);
@@ -2983,11 +3046,6 @@ app.post('/verifiedid/start', async (c) => {
   const baseUrl = getBaseUrl(c);
   const state = crypto.randomUUID();
 
-  // First-party "VerifiedEmployee" credential - Microsoft populates the
-  // claims itself during the Authenticator flow (tied to the signed-in
-  // user verifying against the tenant's own Verified ID authority), so
-  // no "claims" object is needed here, unlike a custom idTokenHint-based
-  // credential would require.
   const requestBody = {
     callback: {
       url: `${baseUrl}/verifiedid/callback`,
@@ -3012,9 +3070,6 @@ app.post('/verifiedid/start', async (c) => {
     return c.json({ error: `Verified ID service returned status ${res.status}` }, 502);
   }
 
-  // Record this request so the callback (below) and status poll have
-  // something to update/read. Short TTL matching the QR code's own
-  // ~a few minute expiry window.
   await c.env.SESSIONS.put(`vc:${state}`, JSON.stringify({ status: 'pending', createdAt: Date.now() }), {
     expirationTtl: 600,
   });
@@ -3022,31 +3077,17 @@ app.post('/verifiedid/start', async (c) => {
   return c.json({ url: resBody.url, state });
 });
 
-// Public callback Microsoft calls as the user progresses through the
-// Authenticator flow (QR scanned, issuance succeeded/failed). This
-// endpoint has NO session cookie available - it's authenticated purely
-// by the shared api-key header, which must match the secret we sent
-// when creating the request. We only ever UPDATE an existing KV key
-// here, never create a new one from unauthenticated input, to avoid an
-// internet-facing endpoint being used to write arbitrary KV data.
+// Existing issuance callback.
 app.post('/verifiedid/callback', async (c) => {
   const apiKey = c.req.header('api-key');
-  if (!apiKey || apiKey !== c.env.VC_CALLBACK_KEY) {
-    return c.json({ error: 'unauthorized' }, 401);
-  }
+  if (!apiKey || apiKey !== c.env.VC_CALLBACK_KEY) return c.json({ error: 'unauthorized' }, 401);
 
   const payload = await c.req.json().catch(() => null);
-  if (!payload || !payload.state) {
-    return c.json({ error: 'invalid_payload' }, 400);
-  }
+  if (!payload || !payload.state) return c.json({ error: 'invalid_payload' }, 400);
 
   const key = `vc:${payload.state}`;
   const existing = await c.env.SESSIONS.get(key);
-  if (!existing) {
-    // Unknown/expired state - nothing to update, but still ack so
-    // Microsoft doesn't retry indefinitely.
-    return c.json({ ok: true });
-  }
+  if (!existing) return c.json({ ok: true });
 
   const record = {
     status: payload.requestStatus || 'unknown',
@@ -3054,13 +3095,9 @@ app.post('/verifiedid/callback', async (c) => {
     updatedAt: Date.now(),
   };
   await c.env.SESSIONS.put(key, JSON.stringify(record), { expirationTtl: 600 });
-
   return c.json({ ok: true });
 });
 
-// Frontend polls this to find out whether the QR code has been scanned
-// and whether issuance succeeded, since Microsoft reports progress to
-// our server (the callback above), not directly to the user's browser.
 app.get('/verifiedid/status', async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: 'unauthorized' }, 401);
@@ -3070,9 +3107,217 @@ app.get('/verifiedid/status', async (c) => {
 
   const raw = await c.env.SESSIONS.get(`vc:${state}`);
   if (!raw) return c.json({ status: 'pending' });
-
   const record = JSON.parse(raw);
   return c.json({ status: record.status, errorMessage: record.errorMessage || null });
+});
+
+// ------------------------------------------------------------
+// Verified ID login / presentation flow.
+// ------------------------------------------------------------
+app.get('/auth/verifiedid', async (c) => {
+  const existingSession = await getSession(c);
+  if (existingSession) return c.redirect(sanitizeNext(c.req.query('next') || '/dashboard'));
+
+  const token = await getVerifiedIdAppToken(c);
+  if (!token) return c.html('<h1>Verified ID login is not configured</h1><p>The site could not authenticate to the Verified ID Request Service.</p>', 502);
+
+  const baseUrl = getBaseUrl(c);
+  const state = crypto.randomUUID();
+  const next = sanitizeNext(c.req.query('next') || '/dashboard');
+  const verifierAuthority = c.env.VC_VERIFIER_AUTHORITY || c.env.VC_AUTHORITY || VC_AUTHORITY_DEFAULT;
+  const acceptedIssuer = c.env.VC_ISSUER || c.env.VC_AUTHORITY || VC_AUTHORITY_DEFAULT;
+  const credentialType = c.env.VC_TYPE || VC_TYPE_DEFAULT;
+
+  const requestBody = {
+    authority: verifierAuthority,
+    includeReceipt: false,
+    registration: {
+      clientName: c.env.VC_VERIFIER_CLIENT_NAME || 'TMTCo Portal',
+      purpose: 'Sign in to TMTCo using your verified employee credential',
+    },
+    callback: {
+      url: `${baseUrl}/auth/verifiedid/callback`,
+      state,
+      headers: { 'api-key': c.env.VC_CALLBACK_KEY },
+    },
+    requestedCredentials: [
+      {
+        type: credentialType,
+        purpose: 'Prove that you are a verified TMTCo employee',
+        acceptedIssuers: [acceptedIssuer],
+        configuration: {
+          validation: {
+            allowRevoked: false,
+            validateLinkedDomain: true,
+          },
+        },
+      },
+    ],
+  };
+
+  const res = await fetch('https://verifiedid.did.msidentity.com/v1.0/verifiableCredentials/createPresentationRequest', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
+  const resBody = await res.json().catch(() => null);
+  if (!res.ok) {
+    console.error('Verified ID createPresentationRequest failed:', res.status, JSON.stringify(resBody));
+    return c.html(`<h1>Could not start Verified ID login</h1><p>Verified ID returned status ${res.status}.</p>`, 502);
+  }
+
+  await c.env.SESSIONS.put(`vclogin:${state}`, JSON.stringify({
+    status: 'pending',
+    next,
+    createdAt: Date.now(),
+  }), { expirationTtl: 600 });
+
+  setCookie(c, 'vc_login_state', state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: 600,
+  });
+
+  const qrUrl = resBody.url || '';
+  const safeQrUrl = escapeHtml(qrUrl);
+  const body = `
+<div class="login-page">
+<div class="login-box" style="max-width:520px">
+<div class="lock-icon">&#x1F4F1;</div>
+<h2>Sign in with Verified ID</h2>
+<p>Open Microsoft Authenticator and approve the request, or scan this QR code from another device.</p>
+<div class="vc-qr-wrap" id="vcLoginQr" style="margin:1rem auto"></div>
+<a href="${safeQrUrl}" class="btn btn-primary" style="display:block;text-align:center">Open in Microsoft Authenticator</a>
+<p id="vcLoginStatus" class="vc-status" style="margin-top:1rem">Waiting for your Verified ID&hellip;</p>
+<p class="login-note">Your browser will return to TMTCo automatically after the credential is verified.</p>
+<p><a href="/auth/login?next=${encodeURIComponent(next)}">Use Microsoft sign-in instead</a></p>
+</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(function(){
+  var state = ${JSON.stringify(state)};
+  var qrUrl = ${JSON.stringify(qrUrl)};
+  var status = document.getElementById('vcLoginStatus');
+  var deadline = Date.now() + 2 * 60 * 1000;
+  if (qrUrl && window.QRCode) new QRCode(document.getElementById('vcLoginQr'), { text: qrUrl, width: 240, height: 240 });
+
+  function poll(){
+    if (Date.now() > deadline) {
+      status.textContent = 'This sign-in request expired. Please start again.';
+      status.className = 'vc-status err';
+      return;
+    }
+    fetch('/auth/verifiedid/status?state=' + encodeURIComponent(state), { credentials: 'same-origin' })
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if (data.status === 'request_retrieved') {
+          status.textContent = 'Authenticator opened. Approve the credential-sharing request on your phone…';
+        } else if (data.status === 'presentation_verified') {
+          status.textContent = 'Verified ID confirmed. Signing you in…';
+          return fetch('/auth/verifiedid/complete?state=' + encodeURIComponent(state), { credentials: 'same-origin' });
+        } else if (data.status === 'presentation_error') {
+          status.textContent = 'Verified ID verification failed: ' + (data.errorMessage || 'please try again.');
+          status.className = 'vc-status err';
+          return null;
+        }
+        setTimeout(poll, 2000);
+        return null;
+      })
+      .then(function(r){
+        if (r && r.redirected) window.location.href = r.url;
+        else if (r && r.ok) return r.text().then(function(url){ if (url) window.location.href = url; });
+      })
+      .catch(function(){ setTimeout(poll, 3000); });
+  }
+  poll();
+})();
+</script>`;
+  return shell('Sign in with Verified ID', body, 'dashboard');
+});
+
+// Verified ID callback: authenticate the callback using the API key, then
+// store only the verified presentation result against the exact transaction.
+// The browser must still call /complete with the matching transaction cookie.
+app.post('/auth/verifiedid/callback', async (c) => {
+  const apiKey = c.req.header('api-key');
+  if (!apiKey || apiKey !== c.env.VC_CALLBACK_KEY) return c.json({ error: 'unauthorized' }, 401);
+
+  const payload = await c.req.json().catch(() => null);
+  if (!payload || !payload.state) return c.json({ error: 'invalid_payload' }, 400);
+
+  const key = `vclogin:${payload.state}`;
+  const existingRaw = await c.env.SESSIONS.get(key);
+  if (!existingRaw) return c.json({ ok: true });
+
+  let existing;
+  try { existing = JSON.parse(existingRaw); } catch { return c.json({ ok: true }); }
+
+  const record = {
+    ...existing,
+    status: payload.requestStatus || 'unknown',
+    errorMessage: payload.error && payload.error.message ? payload.error.message : null,
+    verifiedCredentialsData: payload.requestStatus === 'presentation_verified' ? (payload.verifiedCredentialsData || []) : null,
+    subject: payload.subject || null,
+    updatedAt: Date.now(),
+  };
+
+  await c.env.SESSIONS.put(key, JSON.stringify(record), { expirationTtl: 600 });
+  return c.json({ ok: true });
+});
+
+app.get('/auth/verifiedid/status', async (c) => {
+  const state = c.req.query('state') || '';
+  const cookieState = getCookie(c, 'vc_login_state');
+  if (!state || !cookieState || state !== cookieState) return c.json({ error: 'invalid_transaction' }, 403);
+
+  const raw = await c.env.SESSIONS.get(`vclogin:${state}`);
+  if (!raw) return c.json({ error: 'expired' }, 410);
+  const record = JSON.parse(raw);
+  return c.json({ status: record.status, errorMessage: record.errorMessage || null });
+});
+
+app.get('/auth/verifiedid/complete', async (c) => {
+  const state = c.req.query('state') || '';
+  const cookieState = getCookie(c, 'vc_login_state');
+  if (!state || !cookieState || state !== cookieState) return c.json({ error: 'invalid_transaction' }, 403);
+
+  const key = `vclogin:${state}`;
+  const raw = await c.env.SESSIONS.get(key);
+  if (!raw) return c.json({ error: 'expired' }, 410);
+
+  const record = JSON.parse(raw);
+  if (record.status !== 'presentation_verified') return c.json({ error: 'not_verified' }, 409);
+
+  const identity = getVerifiedIdIdentity(c, record.verifiedCredentialsData);
+  if (!identity) {
+    deleteCookie(c, 'vc_login_state', { path: '/' });
+    await c.env.SESSIONS.delete(key);
+    return c.json({ error: 'The presented credential was not an accepted TMTCo Verified ID credential.' }, 403);
+  }
+
+  const roles = [];
+  await createSession(c, {
+    name: identity.name,
+    email: identity.email,
+    roles,
+    auth_method: 'verified_id',
+    verified_id: {
+      issuer: identity.issuer,
+      type: identity.type,
+      claims: identity.claims,
+      subject: record.subject || null,
+    },
+    access_token: null,
+    refresh_token: null,
+    expires_at: 0,
+  });
+
+  await c.env.SESSIONS.delete(key);
+  deleteCookie(c, 'vc_login_state', { path: '/' });
+  return c.text(record.next || '/dashboard');
 });
 
 // ============================================================
