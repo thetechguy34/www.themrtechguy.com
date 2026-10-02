@@ -2958,7 +2958,6 @@ ${error ? `<div class="error-box">Sign-in failed or access denied.</div>` : ''}
 <div class="back-row"><a href="/dashboard" class="btn btn-ghost">&larr; Back to Dashboard</a></div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 (function(){
   var idleEl = document.getElementById('vcIdle');
@@ -3019,8 +3018,9 @@ ${error ? `<div class="error-box">Sign-in failed or access denied.</div>` : ''}
           return;
         }
         activeEl.style.display = 'block';
-        qrWrap.innerHTML = '';
-        new QRCode(qrWrap, { text: data.url, width: 200, height: 200 });
+        qrWrap.innerHTML = data.qrCode
+          ? '<img src="' + data.qrCode + '" alt="Scan with Microsoft Authenticator" style="width:200px;height:200px;display:block;margin:auto;">'
+          : '<p class="vc-status err">QR code was not returned by Verified ID.</p>';
         deepLink.href = data.url;
         poll(data.state);
       })
@@ -3047,6 +3047,7 @@ app.post('/verifiedid/start', async (c) => {
   const state = crypto.randomUUID();
 
   const requestBody = {
+    includeQRCode: true,
     callback: {
       url: `${baseUrl}/verifiedid/callback`,
       state,
@@ -3074,7 +3075,7 @@ app.post('/verifiedid/start', async (c) => {
     expirationTtl: 600,
   });
 
-  return c.json({ url: resBody.url, state });
+  return c.json({ url: resBody.url, qrCode: resBody.qrCode || '', state });
 });
 
 // Existing issuance callback.
@@ -3130,6 +3131,7 @@ app.get('/auth/verifiedid', async (c) => {
 
   const requestBody = {
     authority: verifierAuthority,
+    includeQRCode: true,
     includeReceipt: false,
     registration: {
       clientName: c.env.VC_VERIFIER_CLIENT_NAME || 'TMTCo Portal',
@@ -3181,28 +3183,27 @@ app.get('/auth/verifiedid', async (c) => {
   });
 
   const qrUrl = resBody.url || '';
+  const qrCode = resBody.qrCode || '';
   const safeQrUrl = escapeHtml(qrUrl);
+  const safeQrCode = typeof qrCode === 'string' && qrCode.startsWith('data:image/') ? qrCode : '';
   const body = `
 <div class="login-page">
 <div class="login-box" style="max-width:520px">
 <div class="lock-icon">&#x1F4F1;</div>
 <h2>Sign in with Verified ID</h2>
 <p>Open Microsoft Authenticator and approve the request, or scan this QR code from another device.</p>
-<div class="vc-qr-wrap" id="vcLoginQr" style="margin:1rem auto"></div>
+<div class="vc-qr-wrap" id="vcLoginQr" style="margin:1rem auto">${safeQrCode ? `<img src="${safeQrCode}" alt="Scan with Microsoft Authenticator" style="width:240px;height:240px;display:block;margin:auto;image-rendering:auto;">` : `<p class="vc-status err">QR code was not returned by Verified ID.</p>`}</div>
 <a href="${safeQrUrl}" class="btn btn-primary" style="display:block;text-align:center">Open in Microsoft Authenticator</a>
 <p id="vcLoginStatus" class="vc-status" style="margin-top:1rem">Waiting for your Verified ID&hellip;</p>
 <p class="login-note">Your browser will return to TMTCo automatically after the credential is verified.</p>
 <p><a href="/auth/login?next=${encodeURIComponent(next)}">Use Microsoft sign-in instead</a></p>
 </div>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 (function(){
   var state = ${JSON.stringify(state)};
-  var qrUrl = ${JSON.stringify(qrUrl)};
   var status = document.getElementById('vcLoginStatus');
   var deadline = Date.now() + 2 * 60 * 1000;
-  if (qrUrl && window.QRCode) new QRCode(document.getElementById('vcLoginQr'), { text: qrUrl, width: 240, height: 240 });
 
   function poll(){
     if (Date.now() > deadline) {
