@@ -661,7 +661,59 @@ const GRAPH_SCOPES =
 // Returns a valid access token for this session, refreshing it via the
 // stored refresh_token if it has expired. Returns null if refresh fails
 // (caller should treat that as "session no longer valid for Graph calls").
+// Raw app-only (client credentials) Graph token fetch - no caching here,
+// callers that need caching handle it themselves (see getValidAccessToken
+// below). Returns {token, expiresIn} or null on failure.
+async function fetchGraphAppOnlyToken(c) {
+  const { TENANT_ID, CLIENT_ID, CLIENT_SECRET } = c.env;
+  try {
+    const res = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        grant_type: 'client_credentials',
+        scope: 'https://graph.microsoft.com/.default',
+      }),
+    });
+    if (!res.ok) {
+      console.error('Graph app-only token request failed:', res.status, await res.text().catch(() => ''));
+      return null;
+    }
+    const data = await res.json();
+    if (!data.access_token) return null;
+    return { token: data.access_token, expiresIn: data.expires_in || 3600 };
+  } catch (e) {
+    console.error('Graph app-only token request threw:', e);
+    return null;
+  }
+}
+
 async function getValidAccessToken(c, session) {
+  // Verified ID (Scenario C) sessions have no delegated token at all -
+  // every Graph call for them runs on the app's own identity instead.
+  // Cached on the session (same pattern as delegated refresh below) so
+  // every admin action doesn't re-fetch a fresh app-only token.
+  //
+  // KNOWN TRADE-OFF: actions taken through a VC-Scenario-C session hit
+  // Graph as the app itself, not as the specific signed-in person -
+  // Entra/Graph audit logs will show the app as the actor, not the
+  // individual admin. Accepted deliberately per the one-step VC sign-in
+  // requirement; the alternative (Scenario B / chain_oauth) preserves
+  // per-admin audit attribution at the cost of an extra sign-in step.
+  if (session.auth_method === 'verified_id') {
+    if (session.appOnlyAccessToken && session.appOnlyExpiresAt && Date.now() < session.appOnlyExpiresAt) {
+      return session.appOnlyAccessToken;
+    }
+    const result = await fetchGraphAppOnlyToken(c);
+    if (!result) return null;
+    session.appOnlyAccessToken = result.token;
+    session.appOnlyExpiresAt = Date.now() + (result.expiresIn - 60) * 1000;
+    await saveSession(c, session);
+    return session.appOnlyAccessToken;
+  }
+
   if (session.access_token && session.expires_at && Date.now() < session.expires_at) {
     return session.access_token;
   }
@@ -758,28 +810,12 @@ async function checkIsGlobalAdmin(accessToken) {
 // a separate consent from the Delegated Directory.Read.All already used
 // elsewhere in this file, even though it's the same permission name.
 async function getGraphAppOnlyToken(c) {
-  const { TENANT_ID, CLIENT_ID, CLIENT_SECRET } = c.env;
-  try {
-    const res = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
-        grant_type: 'client_credentials',
-        scope: 'https://graph.microsoft.com/.default',
-      }),
-    });
-    if (!res.ok) {
-      console.error('Graph app-only token request failed:', res.status, await res.text().catch(() => ''));
-      return null;
-    }
-    const data = await res.json();
-    return data.access_token || null;
-  } catch (e) {
-    console.error('Graph app-only token request threw:', e);
-    return null;
-  }
+  // Thin wrapper over the shared, cache-free fetch - kept as its own
+  // named function since checkIsGlobalAdminByEmailAppOnly (a one-time,
+  // low-frequency call at VC login) doesn't need the session-caching
+  // getValidAccessToken does for the much more frequent per-action calls.
+  const result = await fetchGraphAppOnlyToken(c);
+  return result ? result.token : null;
 }
 
 async function checkIsGlobalAdminByEmailAppOnly(c, email) {
@@ -2690,7 +2726,17 @@ app.post('/admin/groups/email/send', async (c) => {
     return c.redirect(`/admin/groups/email?groupId=${encodeURIComponent(groupId)}&senderr=${encodeURIComponent("Couldn't verify the group's email address. Try again.")}`);
   }
 
-  const r = await graphFetch(c, session, `/me/sendMail`, {
+  // /me has no meaning for an app-only token (Scenario C / Verified ID
+  // sessions) - there's no signed-in user context on a client-credentials
+  // token at all. Application-permission Mail.Send instead lets you send
+  // as any specific mailbox by sending to /users/{mailbox}/sendMail, so
+  // VC sessions send from their own verified email address explicitly.
+  const sendMailPath =
+    session.auth_method === 'verified_id'
+      ? `/users/${encodeURIComponent(session.email)}/sendMail`
+      : `/me/sendMail`;
+
+  const r = await graphFetch(c, session, sendMailPath, {
     method: 'POST',
     body: JSON.stringify({
       message: {
