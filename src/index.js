@@ -451,6 +451,7 @@ ${navItem('/tos', 'Terms of Service', 'tos')}
 ${navItem('/contact', 'Contact', 'contact')}
 ${navItem('/privacy', 'Privacy', 'privacy')}
 ${navItem('/services', 'Services', 'services')}
+${navItem('/.wellknown', 'Wellknown', 'wellknown')}
 </ul>
 </aside>
 
@@ -1044,6 +1045,22 @@ app.get('/', (c) => {
 </div>`;
   return shell('TMTCo', body, 'home');
 });
+
+// ============================================================
+// ROUTES - well known - discord verify
+// little hidden page on the site to verify ownership for discird
+// ============================================================
+app.get('/.wellknown/discord', (c) => {
+  const body `
+  <div class="page-section top>
+  <div class="section-header">
+  </div>
+  <h1>dh=77ac9a6e8e54fc39e51c2fb1fadf6fb667140eb0</h1>`;
+    return shell ('Wellknown', body, 'wellknown');
+});
+
+
+
 
 // ============================================================
 // ROUTES - TECH THINGS
